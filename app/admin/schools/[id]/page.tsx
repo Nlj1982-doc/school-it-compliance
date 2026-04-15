@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useParams } from "next/navigation";
+import SchoolNav from "@/components/SchoolNav";
 
 interface SchoolProfile {
   id: string;
@@ -73,7 +74,6 @@ function Section({ title, icon, children }: { title: string; icon: string; child
 export default function SchoolProfilePage() {
   const params = useParams();
   const id = params.id as string;
-  const router = useRouter();
   const [form, setForm] = useState<SchoolProfile>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -121,29 +121,20 @@ export default function SchoolProfilePage() {
 
   return (
     <main className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-blue-800 text-white px-4 py-4 shadow-md">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div>
-            <button onClick={() => router.push("/admin")} className="text-blue-200 text-sm hover:text-white mb-1 block">
-              ← Back to Admin Portal
-            </button>
-            <h1 className="font-bold text-lg">{form.name || "School Profile"}</h1>
-            {form.urn && <p className="text-blue-200 text-sm">URN: {form.urn}</p>}
-          </div>
-          <button
-            form="school-profile-form"
-            type="submit"
-            disabled={saving}
-            className="bg-white text-blue-800 hover:bg-blue-50 px-5 py-2 rounded-lg font-medium text-sm transition-colors disabled:opacity-50"
-          >
-            {saving ? "Saving…" : saved ? "✓ Saved" : "Save Changes"}
-          </button>
-        </div>
+      <SchoolNav schoolId={id} schoolName={form.name} />
+      <div className="max-w-5xl mx-auto px-4 pt-4 flex justify-end">
+        <button
+          form="school-profile-form"
+          type="submit"
+          disabled={saving}
+          className="bg-blue-700 hover:bg-blue-800 text-white px-5 py-2 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 mt-4"
+        >
+          {saving ? "Saving…" : saved ? "✓ Saved" : "Save Changes"}
+        </button>
       </div>
 
       <form id="school-profile-form" onSubmit={handleSave}>
-        <div className="max-w-4xl mx-auto px-4 py-6 space-y-5">
+        <div className="max-w-5xl mx-auto px-4 py-4 space-y-5">
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>
           )}
@@ -192,13 +183,9 @@ export default function SchoolProfilePage() {
             <Field label="Contract Expiry Date" value={form.msp_contract_expiry} onChange={set("msp_contract_expiry")} type="date" />
           </Section>
 
-          {/* Save button at bottom too */}
           <div className="flex justify-end pb-4">
-            <button
-              type="submit"
-              disabled={saving}
-              className="bg-blue-700 hover:bg-blue-800 text-white px-8 py-2.5 rounded-lg font-medium transition-colors disabled:opacity-50"
-            >
+            <button type="submit" disabled={saving}
+              className="bg-blue-700 hover:bg-blue-800 text-white px-8 py-2.5 rounded-lg font-medium transition-colors disabled:opacity-50">
               {saving ? "Saving…" : saved ? "✓ Saved" : "Save Changes"}
             </button>
           </div>

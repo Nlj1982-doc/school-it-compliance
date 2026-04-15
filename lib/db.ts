@@ -82,6 +82,46 @@ function initSchema(db: Database.Database) {
   for (const sql of migrations) {
     try { db.exec(sql); } catch { /* already exists */ }
   }
+
+  // Contracts table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS contracts (
+      id TEXT PRIMARY KEY,
+      school_id TEXT NOT NULL REFERENCES schools(id),
+      name TEXT NOT NULL,
+      supplier TEXT,
+      type TEXT,
+      start_date TEXT,
+      end_date TEXT,
+      value TEXT,
+      contact_name TEXT,
+      contact_email TEXT,
+      contact_phone TEXT,
+      auto_renew INTEGER DEFAULT 0,
+      notes TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS assets (
+      id TEXT PRIMARY KEY,
+      school_id TEXT NOT NULL REFERENCES schools(id),
+      device_type TEXT NOT NULL,
+      asset_tag TEXT,
+      device_name TEXT,
+      make TEXT,
+      model TEXT,
+      serial_number TEXT,
+      os TEXT,
+      purchase_date TEXT,
+      warranty_end_date TEXT,
+      warranty_type TEXT,
+      assigned_to TEXT,
+      location TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      notes TEXT,
+      created_at TEXT NOT NULL
+    );
+  `);
 }
 
 function seedAdmin(db: Database.Database) {
