@@ -8,38 +8,36 @@ import NavBar from "@/components/NavBar";
 
 interface Assessment {
   id: string;
+  school_id: string | null;
   school_name: string;
-  created_at: string;
   updated_at: string;
   answers: string;
 }
 
+interface SessionUser {
+  userId: string;
+  username: string;
+  role: string;
+  schoolId: string | null;
+  schoolName: string | null;
+}
+
 export default function HomePage() {
   const router = useRouter();
-  const [schoolName, setSchoolName] = useState("");
+  const [user, setUser] = useState<SessionUser | null>(null);
   const [assessments, setAssessments] = useState<Assessment[]>([]);
-  const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
 
   useEffect(() => {
-    fetch("/api/assessments")
-      .then((r) => r.json())
-      .then(setAssessments)
-      .finally(() => setFetching(false));
-  }, []);
-
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
-    if (!schoolName.trim()) return;
-    setLoading(true);
-    const res = await fetch("/api/assessments", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ school_name: schoolName }),
+    Promise.all([
+      fetch("/api/auth/me").then(r => r.json()),
+      fetch("/api/assessments").then(r => r.json()),
+    ]).then(([me, a]) => {
+      setUser(me.user);
+      setAssessments(Array.isArray(a) ? a : []);
+      setFetching(false);
     });
-    const { id } = await res.json();
-    router.push(`/assess/${id}`);
-  }
+  }, []);
 
   function getOverallRag(answers: Record<string, QuestionStatus>) {
     const scores = frameworks.map((f) => getFrameworkScore(f.id, answers));
@@ -51,25 +49,32 @@ export default function HomePage() {
 
   const totalQuestions = getTotalQuestions();
 
+  // School users go straight to their assessment; this page is mainly a dashboard
+  const myAssessment = assessments[0] ?? null;
+
+  if (fetching) {
+    return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-400">Loading...</div>;
+  }
+
   return (
     <main className="min-h-screen bg-gray-50">
       <div className="bg-blue-800 text-white py-8 px-4">
         <div className="max-w-4xl mx-auto">
-          <div className="flex items-center gap-3 mb-2">
-            <span className="text-3xl">🏫</span>
-            <h1 className="text-2xl font-bold">UK Primary School IT Compliance Checker</h1>
-          </div>
-          <p className="text-blue-200 ml-12">
-            Self-assessment tool covering all mandatory UK frameworks — KCSiE, DfE Filtering Standards,
-            Cyber Essentials, UK GDPR, Online Safety Act 2023, and Ofsted requirements.
-          </p>
-          <div className="mt-3 ml-12">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">🏫</span>
+              <div>
+                <h1 className="text-2xl font-bold">UK School IT Compliance</h1>
+                {user?.schoolName && <p className="text-blue-200 mt-0.5">{user.schoolName}</p>}
+              </div>
+            </div>
             <NavBar />
           </div>
         </div>
       </div>
 
       <div className="max-w-4xl mx-auto px-4 py-8">
+        {/* Stats */}
         <div className="grid grid-cols-3 gap-4 mb-8">
           <div className="bg-white rounded-lg p-4 text-center shadow-sm border">
             <div className="text-2xl font-bold text-blue-800">{frameworks.length}</div>
@@ -80,34 +85,81 @@ export default function HomePage() {
             <div className="text-sm text-gray-500">Compliance Checks</div>
           </div>
           <div className="bg-white rounded-lg p-4 text-center shadow-sm border">
-            <div className="text-2xl font-bold text-green-700">Free</div>
-            <div className="text-sm text-gray-500">No Cost, No Login</div>
+            {myAssessment ? (() => {
+              const answers = JSON.parse(myAssessment.answers) as Record<string, QuestionStatus>;
+              const answered = Object.values(answers).filter(v => v !== null).length;
+              const pct = Math.round((answered / totalQuestions) * 100);
+              return <>
+                <div className="text-2xl font-bold text-blue-800">{pct}%</div>
+                <div className="text-sm text-gray-500">Assessment Complete</div>
+              </>;
+            })() : <>
+              <div className="text-2xl font-bold text-gray-400">0%</div>
+              <div className="text-sm text-gray-500">Assessment Complete</div>
+            </>}
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border p-6 mb-8">
-          <h2 className="text-lg font-semibold text-gray-800 mb-4">Start a New Assessment</h2>
-          <form onSubmit={handleCreate} className="flex gap-3">
-            <input
-              type="text"
-              value={schoolName}
-              onChange={(e) => setSchoolName(e.target.value)}
-              placeholder="Enter your school name..."
-              className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
-            <button
-              type="submit"
-              disabled={loading}
-              className="bg-blue-700 hover:bg-blue-800 text-white px-6 py-2 rounded-lg font-medium disabled:opacity-50 transition-colors"
-            >
-              {loading ? "Starting..." : "Start Assessment"}
-            </button>
-          </form>
-        </div>
+        {/* Assessment card */}
+        {myAssessment ? (() => {
+          const answers = JSON.parse(myAssessment.answers) as Record<string, QuestionStatus>;
+          const rag = getOverallRag(answers);
+          const answered = Object.values(answers).filter(v => v !== null).length;
+          return (
+            <div className="bg-white rounded-xl shadow-sm border p-6 mb-8">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-gray-800">Your Compliance Assessment</h2>
+                {rag && (
+                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${rag === "green" ? "bg-green-100 text-green-800" : rag === "amber" ? "bg-yellow-100 text-yellow-800" : "bg-red-100 text-red-800"}`}>
+                    {rag === "green" ? "Compliant" : rag === "amber" ? "Needs Work" : "At Risk"}
+                  </span>
+                )}
+              </div>
+              <p className="text-sm text-gray-500 mb-4">{answered} of {totalQuestions} questions answered · Last updated {new Date(myAssessment.updated_at).toLocaleDateString("en-GB")}</p>
+              <div className="h-2 bg-gray-100 rounded-full mb-5">
+                <div className="h-2 bg-blue-600 rounded-full" style={{ width: `${Math.round((answered / totalQuestions) * 100)}%` }} />
+              </div>
+              {/* Per-framework scores */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">
+                {frameworks.map(f => {
+                  const s = getFrameworkScore(f.id, answers);
+                  return (
+                    <div key={f.id} className="bg-gray-50 rounded-lg p-3">
+                      <div className="text-xs text-gray-500 mb-1">{f.shortTitle}</div>
+                      {s && s.answered > 0 ? (
+                        <div className={`text-sm font-bold ${s.rag === "green" ? "text-green-700" : s.rag === "amber" ? "text-yellow-600" : "text-red-600"}`}>
+                          {s.percentage}%
+                        </div>
+                      ) : <div className="text-sm text-gray-300">Not started</div>}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => router.push(`/assess/${myAssessment.id}`)}
+                  className="bg-blue-700 hover:bg-blue-800 text-white px-5 py-2 rounded-lg font-medium text-sm transition-colors">
+                  {answered === 0 ? "Start Assessment" : "Continue Assessment"}
+                </button>
+                {answered > 0 && (
+                  <button onClick={() => router.push(`/report/${myAssessment.id}`)}
+                    className="border border-blue-700 text-blue-700 hover:bg-blue-50 px-5 py-2 rounded-lg font-medium text-sm transition-colors">
+                    View Report
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })() : (
+          <div className="bg-white rounded-xl shadow-sm border p-8 text-center mb-8">
+            <div className="text-4xl mb-3">📋</div>
+            <h2 className="text-lg font-semibold text-gray-700 mb-2">No assessment yet</h2>
+            <p className="text-gray-500 text-sm">Your school hasn&apos;t been set up yet. Contact your administrator.</p>
+          </div>
+        )}
 
-        <div className="bg-white rounded-xl shadow-sm border p-6 mb-8">
-          <h2 className="text-lg font-semibold text-gray-800 mb-4">Frameworks Included</h2>
+        {/* Frameworks overview */}
+        <div className="bg-white rounded-xl shadow-sm border p-6">
+          <h2 className="text-lg font-semibold text-gray-800 mb-4">Frameworks Covered</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {frameworks.map((f) => (
               <div key={f.id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
@@ -122,49 +174,6 @@ export default function HomePage() {
             ))}
           </div>
         </div>
-
-        {!fetching && assessments.length > 0 && (
-          <div className="bg-white rounded-xl shadow-sm border p-6">
-            <h2 className="text-lg font-semibold text-gray-800 mb-4">Previous Assessments</h2>
-            <div className="space-y-3">
-              {assessments.map((a) => {
-                const answers = JSON.parse(a.answers) as Record<string, QuestionStatus>;
-                const rag = getOverallRag(answers);
-                const answered = Object.values(answers).filter((v) => v !== null).length;
-                return (
-                  <div
-                    key={a.id}
-                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 cursor-pointer"
-                    onClick={() => router.push(`/assess/${a.id}`)}
-                  >
-                    <div>
-                      <div className="font-medium text-gray-800">{a.school_name}</div>
-                      <div className="text-sm text-gray-500">
-                        Last updated: {new Date(a.updated_at).toLocaleDateString("en-GB")} · {answered}/{totalQuestions} questions answered
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {rag && (
-                        <span
-                          className={`px-3 py-1 rounded-full text-sm font-medium ${
-                            rag === "green"
-                              ? "bg-green-100 text-green-800"
-                              : rag === "amber"
-                              ? "bg-yellow-100 text-yellow-800"
-                              : "bg-red-100 text-red-800"
-                          }`}
-                        >
-                          {rag === "green" ? "Good" : rag === "amber" ? "Needs Work" : "At Risk"}
-                        </span>
-                      )}
-                      <span className="text-blue-600 text-sm font-medium">Continue →</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
       </div>
     </main>
   );

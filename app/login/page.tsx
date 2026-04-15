@@ -1,10 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -20,13 +18,13 @@ export default function LoginPage() {
       body: JSON.stringify({ username, password }),
     });
     const data = await res.json();
-    setLoading(false);
     if (!res.ok) {
+      setLoading(false);
       setError(data.error ?? "Login failed");
       return;
     }
-    router.push(data.role === "admin" ? "/admin" : "/");
-    router.refresh();
+    // Full page navigation ensures the session cookie is sent with the request
+    window.location.href = data.role === "admin" ? "/admin" : "/";
   }
 
   return (

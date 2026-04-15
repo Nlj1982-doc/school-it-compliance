@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { getDb } from "@/lib/db";
 import { getSession } from "@/lib/session";
-import type { User } from "@/lib/db";
 
 export async function POST(req: NextRequest) {
   const { username, password } = await req.json();
@@ -12,9 +11,12 @@ export async function POST(req: NextRequest) {
   }
 
   const db = getDb();
-  const user = db
-    .prepare("SELECT * FROM users WHERE username = ?")
-    .get(username.trim().toLowerCase()) as User | undefined;
+  const user = db.prepare(`
+    SELECT u.*, s.name as school_name
+    FROM users u
+    LEFT JOIN schools s ON s.id = u.school_id
+    WHERE u.username = ?
+  `).get(username.trim().toLowerCase()) as (Record<string, string> | undefined);
 
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
     return NextResponse.json({ error: "Invalid username or password" }, { status: 401 });
@@ -23,8 +25,9 @@ export async function POST(req: NextRequest) {
   const session = await getSession();
   session.userId = user.id;
   session.username = user.username;
-  session.role = user.role;
-  session.schoolName = user.school_name;
+  session.role = user.role as "admin" | "user";
+  session.schoolId = user.school_id ?? null;
+  session.schoolName = user.school_name ?? null;
   await session.save();
 
   return NextResponse.json({ ok: true, role: user.role });

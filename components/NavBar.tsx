@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 interface SessionUser {
@@ -11,7 +10,6 @@ interface SessionUser {
 }
 
 export default function NavBar() {
-  const router = useRouter();
   const [user, setUser] = useState<SessionUser | null>(null);
 
   useEffect(() => {
@@ -22,8 +20,7 @@ export default function NavBar() {
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/login");
-    router.refresh();
+    window.location.href = "/login";
   }
 
   if (!user) return null;
@@ -35,7 +32,7 @@ export default function NavBar() {
       </span>
       {user.role === "admin" && (
         <button
-          onClick={() => router.push("/admin")}
+          onClick={() => { window.location.href = "/admin"; }}
           className="bg-blue-700 hover:bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
         >
           Admin

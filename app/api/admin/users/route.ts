@@ -6,9 +6,7 @@ import { getSession } from "@/lib/session";
 
 async function requireAdmin() {
   const session = await getSession();
-  if (!session.userId || session.role !== "admin") {
-    return null;
-  }
+  if (!session.userId || session.role !== "admin") return null;
   return session;
 }
 
@@ -17,9 +15,13 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const db = getDb();
-  const users = db
-    .prepare("SELECT id, username, role, school_name, created_at FROM users ORDER BY created_at DESC")
-    .all();
+  const users = db.prepare(`
+    SELECT u.id, u.username, u.role, u.school_id, u.created_at,
+           s.name as school_name
+    FROM users u
+    LEFT JOIN schools s ON s.id = u.school_id
+    ORDER BY u.created_at DESC
+  `).all();
   return NextResponse.json(users);
 }
 
@@ -27,9 +29,12 @@ export async function POST(req: NextRequest) {
   if (!(await requireAdmin())) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const { username, password, role, school_name } = await req.json();
+  const { username, password, role, school_id } = await req.json();
   if (!username?.trim() || !password || !role) {
     return NextResponse.json({ error: "Username, password and role are required" }, { status: 400 });
+  }
+  if (role === "user" && !school_id) {
+    return NextResponse.json({ error: "School users must be assigned to a school" }, { status: 400 });
   }
   const db = getDb();
   const existing = db.prepare("SELECT id FROM users WHERE username = ?").get(username.trim().toLowerCase());
@@ -39,8 +44,8 @@ export async function POST(req: NextRequest) {
   const hash = bcrypt.hashSync(password, 10);
   const id = randomUUID();
   db.prepare(
-    "INSERT INTO users (id, username, password_hash, role, school_name, created_at) VALUES (?, ?, ?, ?, ?, ?)"
-  ).run(id, username.trim().toLowerCase(), hash, role, school_name ?? null, new Date().toISOString());
+    "INSERT INTO users (id, username, password_hash, role, school_id, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+  ).run(id, username.trim().toLowerCase(), hash, role, school_id ?? null, new Date().toISOString());
   return NextResponse.json({ ok: true, id });
 }
 

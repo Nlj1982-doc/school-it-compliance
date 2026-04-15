@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getIronSession } from "iron-session";
-import type { SessionData } from "@/lib/session";
-import { SESSION_OPTIONS } from "@/lib/session";
+import { SESSION_OPTIONS, type SessionData } from "@/lib/session-config";
 
 const PUBLIC_PATHS = ["/login", "/api/auth/login"];
 

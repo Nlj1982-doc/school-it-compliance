@@ -5,10 +5,19 @@ import { useRouter } from "next/navigation";
 import { frameworks, getFrameworkScore, getTotalQuestions } from "@/lib/frameworks";
 import type { QuestionStatus } from "@/lib/frameworks";
 
+interface School {
+  id: string;
+  name: string;
+  urn: string | null;
+  address: string | null;
+  created_at: string;
+  user_count: number;
+}
+
 interface Assessment {
   id: string;
+  school_id: string | null;
   school_name: string;
-  user_id: string | null;
   created_at: string;
   updated_at: string;
   answers: string;
@@ -18,6 +27,7 @@ interface User {
   id: string;
   username: string;
   role: string;
+  school_id: string | null;
   school_name: string | null;
   created_at: string;
 }
@@ -27,63 +37,91 @@ type Tab = "schools" | "users";
 export default function AdminPage() {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("schools");
+  const [schools, setSchools] = useState<School[]>([]);
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // New school form
+  const [newSchoolName, setNewSchoolName] = useState("");
+  const [newSchoolUrn, setNewSchoolUrn] = useState("");
+  const [newSchoolAddress, setNewSchoolAddress] = useState("");
+  const [schoolError, setSchoolError] = useState("");
+  const [creatingSchool, setCreatingSchool] = useState(false);
+  const [showSchoolForm, setShowSchoolForm] = useState(false);
 
   // New user form
   const [newUsername, setNewUsername] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newRole, setNewRole] = useState("user");
-  const [newSchool, setNewSchool] = useState("");
-  const [createError, setCreateError] = useState("");
-  const [creating, setCreating] = useState(false);
+  const [newSchoolId, setNewSchoolId] = useState("");
+  const [userError, setUserError] = useState("");
+  const [creatingUser, setCreatingUser] = useState(false);
+  const [showUserForm, setShowUserForm] = useState(false);
 
   const totalQuestions = getTotalQuestions();
 
-  useEffect(() => {
-    Promise.all([
+  async function loadAll() {
+    const [s, a, u] = await Promise.all([
+      fetch("/api/admin/schools").then((r) => r.json()),
       fetch("/api/assessments").then((r) => r.json()),
       fetch("/api/admin/users").then((r) => r.json()),
-    ]).then(([a, u]) => {
-      setAssessments(a);
-      setUsers(u);
-      setLoading(false);
-    });
-  }, []);
+    ]);
+    setSchools(s);
+    setAssessments(a);
+    setUsers(u);
+    setLoading(false);
+  }
+
+  useEffect(() => { loadAll(); }, []);
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/login");
-    router.refresh();
+    window.location.href = "/login";
+  }
+
+  async function handleCreateSchool(e: React.FormEvent) {
+    e.preventDefault();
+    setSchoolError("");
+    setCreatingSchool(true);
+    const res = await fetch("/api/admin/schools", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newSchoolName, urn: newSchoolUrn, address: newSchoolAddress }),
+    });
+    const data = await res.json();
+    setCreatingSchool(false);
+    if (!res.ok) { setSchoolError(data.error ?? "Failed to create school"); return; }
+    setNewSchoolName(""); setNewSchoolUrn(""); setNewSchoolAddress("");
+    setShowSchoolForm(false);
+    loadAll();
+  }
+
+  async function handleDeleteSchool(id: string, name: string) {
+    if (!confirm(`Delete "${name}" and all its data? This cannot be undone.`)) return;
+    await fetch("/api/admin/schools", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    loadAll();
   }
 
   async function handleCreateUser(e: React.FormEvent) {
     e.preventDefault();
-    setCreateError("");
-    setCreating(true);
+    setUserError("");
+    setCreatingUser(true);
     const res = await fetch("/api/admin/users", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        username: newUsername,
-        password: newPassword,
-        role: newRole,
-        school_name: newSchool || null,
-      }),
+      body: JSON.stringify({ username: newUsername, password: newPassword, role: newRole, school_id: newSchoolId || null }),
     });
     const data = await res.json();
-    setCreating(false);
-    if (!res.ok) {
-      setCreateError(data.error ?? "Failed to create user");
-      return;
-    }
-    setNewUsername("");
-    setNewPassword("");
-    setNewRole("user");
-    setNewSchool("");
-    const updated = await fetch("/api/admin/users").then((r) => r.json());
-    setUsers(updated);
+    setCreatingUser(false);
+    if (!res.ok) { setUserError(data.error ?? "Failed to create user"); return; }
+    setNewUsername(""); setNewPassword(""); setNewRole("user"); setNewSchoolId("");
+    setShowUserForm(false);
+    loadAll();
   }
 
   async function handleDeleteUser(id: string, username: string) {
@@ -93,29 +131,23 @@ export default function AdminPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     });
-    setUsers((prev) => prev.filter((u) => u.id !== id));
+    loadAll();
   }
 
-  function getOverallScore(answers: Record<string, QuestionStatus>) {
-    const scores = frameworks.map((f) => getFrameworkScore(f.id, answers));
-    const valid = scores.filter(Boolean);
-    if (!valid.length) return null;
-    const avg = Math.round(
-      valid.reduce((a, s) => a + (s?.percentage ?? 0), 0) / valid.length
-    );
+  function getSchoolScore(schoolId: string) {
+    const a = assessments.find((a) => a.school_id === schoolId);
+    if (!a) return null;
+    const answers = JSON.parse(a.answers) as Record<string, QuestionStatus>;
+    const answered = Object.values(answers).filter((v) => v !== null).length;
+    if (answered === 0) return null;
+    const scores = frameworks.map((f) => getFrameworkScore(f.id, answers)).filter(Boolean);
+    const avg = Math.round(scores.reduce((a, s) => a + (s?.percentage ?? 0), 0) / scores.length);
     const rag = avg >= 75 ? "green" : avg >= 50 ? "amber" : "red";
-    return { avg, rag };
+    return { avg, rag, answered, assessmentId: a.id };
   }
 
-  const compliant = assessments.filter((a) => {
-    const s = getOverallScore(JSON.parse(a.answers));
-    return s?.rag === "green";
-  }).length;
-
-  const atRisk = assessments.filter((a) => {
-    const s = getOverallScore(JSON.parse(a.answers));
-    return s?.rag === "red";
-  }).length;
+  const compliant = schools.filter((s) => getSchoolScore(s.id)?.rag === "green").length;
+  const atRisk = schools.filter((s) => getSchoolScore(s.id)?.rag === "red").length;
 
   return (
     <main className="min-h-screen bg-gray-50">
@@ -129,270 +161,262 @@ export default function AdminPage() {
               <p className="text-blue-200 text-sm">UK School IT Compliance</p>
             </div>
           </div>
-          <button
-            onClick={handleLogout}
-            className="bg-blue-700 hover:bg-blue-600 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-          >
+          <button onClick={handleLogout} className="bg-blue-700 hover:bg-blue-600 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
             Sign Out
           </button>
         </div>
       </div>
 
       <div className="max-w-6xl mx-auto px-4 py-6">
-        {/* Summary stats */}
+        {/* Stats */}
         <div className="grid grid-cols-4 gap-4 mb-6">
           <div className="bg-white rounded-xl border p-4 text-center shadow-sm">
-            <div className="text-3xl font-bold text-blue-800">{assessments.length}</div>
-            <div className="text-sm text-gray-500">Total Assessments</div>
+            <div className="text-3xl font-bold text-blue-800">{schools.length}</div>
+            <div className="text-sm text-gray-500">Schools</div>
           </div>
           <div className="bg-white rounded-xl border p-4 text-center shadow-sm">
             <div className="text-3xl font-bold text-green-700">{compliant}</div>
-            <div className="text-sm text-gray-500">Compliant Schools</div>
+            <div className="text-sm text-gray-500">Compliant</div>
           </div>
           <div className="bg-white rounded-xl border p-4 text-center shadow-sm">
             <div className="text-3xl font-bold text-red-600">{atRisk}</div>
-            <div className="text-sm text-gray-500">At Risk Schools</div>
+            <div className="text-sm text-gray-500">At Risk</div>
           </div>
           <div className="bg-white rounded-xl border p-4 text-center shadow-sm">
-            <div className="text-3xl font-bold text-gray-700">{users.length}</div>
-            <div className="text-sm text-gray-500">User Accounts</div>
+            <div className="text-3xl font-bold text-gray-700">{users.filter(u => u.role !== "admin").length}</div>
+            <div className="text-sm text-gray-500">School Users</div>
           </div>
         </div>
 
         {/* Tabs */}
         <div className="flex gap-1 mb-6 bg-white border rounded-xl p-1 w-fit shadow-sm">
-          <button
-            onClick={() => setTab("schools")}
-            className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${
-              tab === "schools" ? "bg-blue-700 text-white" : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            Schools & Assessments
-          </button>
-          <button
-            onClick={() => setTab("users")}
-            className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${
-              tab === "users" ? "bg-blue-700 text-white" : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            User Management
-          </button>
+          {(["schools", "users"] as Tab[]).map((t) => (
+            <button key={t} onClick={() => setTab(t)}
+              className={`px-5 py-2 rounded-lg text-sm font-medium capitalize transition-colors ${tab === t ? "bg-blue-700 text-white" : "text-gray-600 hover:bg-gray-100"}`}>
+              {t === "schools" ? "Schools & Assessments" : "Users"}
+            </button>
+          ))}
         </div>
 
-        {/* Schools tab */}
+        {/* SCHOOLS TAB */}
         {tab === "schools" && (
-          <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-            <div className="px-5 py-4 border-b bg-gray-50">
-              <h2 className="font-semibold text-gray-800">All School Assessments</h2>
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h2 className="font-semibold text-gray-800 text-lg">All Schools</h2>
+              <button onClick={() => setShowSchoolForm(!showSchoolForm)}
+                className="bg-blue-700 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                + Add School
+              </button>
             </div>
-            {loading ? (
-              <div className="p-8 text-center text-gray-400">Loading...</div>
-            ) : assessments.length === 0 ? (
-              <div className="p-8 text-center text-gray-400">No assessments yet.</div>
-            ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-gray-50 text-gray-500 text-left">
-                    <th className="px-5 py-3 font-medium">School</th>
-                    <th className="px-5 py-3 font-medium">Progress</th>
-                    {frameworks.map((f) => (
-                      <th key={f.id} className="px-3 py-3 font-medium text-center">
-                        {f.shortTitle}
-                      </th>
-                    ))}
-                    <th className="px-5 py-3 font-medium">Overall</th>
-                    <th className="px-5 py-3 font-medium">Last Updated</th>
-                    <th className="px-5 py-3 font-medium"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {assessments.map((a) => {
-                    const answers = JSON.parse(a.answers) as Record<string, QuestionStatus>;
-                    const answered = Object.values(answers).filter((v) => v !== null).length;
-                    const overall = getOverallScore(answers);
-                    return (
-                      <tr key={a.id} className="hover:bg-gray-50">
-                        <td className="px-5 py-3 font-medium text-gray-800">{a.school_name}</td>
-                        <td className="px-5 py-3 text-gray-500">
-                          {answered}/{totalQuestions}
-                        </td>
-                        {frameworks.map((f) => {
-                          const score = getFrameworkScore(f.id, answers);
-                          return (
-                            <td key={f.id} className="px-3 py-3 text-center">
-                              {score && score.answered > 0 ? (
-                                <span
-                                  className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
-                                    score.rag === "green"
-                                      ? "bg-green-100 text-green-700"
-                                      : score.rag === "amber"
-                                      ? "bg-yellow-100 text-yellow-700"
-                                      : "bg-red-100 text-red-700"
-                                  }`}
-                                >
-                                  {score.percentage}%
-                                </span>
-                              ) : (
-                                <span className="text-gray-300">—</span>
-                              )}
-                            </td>
-                          );
-                        })}
-                        <td className="px-5 py-3">
-                          {overall ? (
-                            <span
-                              className={`inline-block px-2 py-1 rounded-full text-xs font-bold ${
-                                overall.rag === "green"
-                                  ? "bg-green-100 text-green-700"
-                                  : overall.rag === "amber"
-                                  ? "bg-yellow-100 text-yellow-700"
-                                  : "bg-red-100 text-red-700"
-                              }`}
-                            >
-                              {overall.avg}%
-                            </span>
-                          ) : (
-                            <span className="text-gray-300 text-xs">—</span>
-                          )}
-                        </td>
-                        <td className="px-5 py-3 text-gray-400 text-xs">
-                          {new Date(a.updated_at).toLocaleDateString("en-GB")}
-                        </td>
-                        <td className="px-5 py-3">
-                          <button
-                            onClick={() => router.push(`/report/${a.id}`)}
-                            className="text-blue-600 hover:underline text-xs font-medium mr-3"
-                          >
-                            Report
-                          </button>
-                          <button
-                            onClick={() => router.push(`/assess/${a.id}`)}
-                            className="text-gray-500 hover:underline text-xs"
-                          >
-                            Edit
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+
+            {/* Add school form */}
+            {showSchoolForm && (
+              <div className="bg-white rounded-xl shadow-sm border p-5">
+                <h3 className="font-semibold text-gray-800 mb-4">New School</h3>
+                <form onSubmit={handleCreateSchool} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">School Name *</label>
+                    <input type="text" value={newSchoolName} onChange={e => setNewSchoolName(e.target.value)}
+                      placeholder="e.g. St John's Primary" required
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">URN (optional)</label>
+                    <input type="text" value={newSchoolUrn} onChange={e => setNewSchoolUrn(e.target.value)}
+                      placeholder="e.g. 123456"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Address (optional)</label>
+                    <input type="text" value={newSchoolAddress} onChange={e => setNewSchoolAddress(e.target.value)}
+                      placeholder="e.g. London, SW1"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  {schoolError && <div className="sm:col-span-3 text-red-600 text-sm bg-red-50 border border-red-200 px-3 py-2 rounded-lg">{schoolError}</div>}
+                  <div className="sm:col-span-3 flex gap-2">
+                    <button type="submit" disabled={creatingSchool}
+                      className="bg-blue-700 hover:bg-blue-800 text-white px-5 py-2 rounded-lg text-sm font-medium disabled:opacity-50 transition-colors">
+                      {creatingSchool ? "Creating..." : "Create School"}
+                    </button>
+                    <button type="button" onClick={() => setShowSchoolForm(false)}
+                      className="text-gray-500 hover:text-gray-700 px-4 py-2 text-sm">Cancel</button>
+                  </div>
+                </form>
+              </div>
             )}
+
+            {/* Schools list */}
+            <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+              {loading ? (
+                <div className="p-8 text-center text-gray-400">Loading...</div>
+              ) : schools.length === 0 ? (
+                <div className="p-8 text-center text-gray-400">No schools yet. Add one above.</div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-gray-50 text-gray-500 text-left">
+                      <th className="px-5 py-3 font-medium">School</th>
+                      <th className="px-4 py-3 font-medium">URN</th>
+                      <th className="px-4 py-3 font-medium">Users</th>
+                      {frameworks.map(f => (
+                        <th key={f.id} className="px-3 py-3 font-medium text-center">{f.shortTitle}</th>
+                      ))}
+                      <th className="px-4 py-3 font-medium">Overall</th>
+                      <th className="px-4 py-3 font-medium">Progress</th>
+                      <th className="px-4 py-3 font-medium"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {schools.map((school) => {
+                      const score = getSchoolScore(school.id);
+                      const assessment = assessments.find(a => a.school_id === school.id);
+                      const answers = assessment ? JSON.parse(assessment.answers) as Record<string, QuestionStatus> : {};
+                      return (
+                        <tr key={school.id} className="hover:bg-gray-50">
+                          <td className="px-5 py-3">
+                            <div className="font-medium text-gray-800">{school.name}</div>
+                            {school.address && <div className="text-xs text-gray-400">{school.address}</div>}
+                          </td>
+                          <td className="px-4 py-3 text-gray-500 text-xs">{school.urn ?? "—"}</td>
+                          <td className="px-4 py-3 text-gray-500">{school.user_count}</td>
+                          {frameworks.map(f => {
+                            const fs = assessment ? getFrameworkScore(f.id, answers) : null;
+                            return (
+                              <td key={f.id} className="px-3 py-3 text-center">
+                                {fs && fs.answered > 0 ? (
+                                  <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${fs.rag === "green" ? "bg-green-100 text-green-700" : fs.rag === "amber" ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-700"}`}>
+                                    {fs.percentage}%
+                                  </span>
+                                ) : <span className="text-gray-300">—</span>}
+                              </td>
+                            );
+                          })}
+                          <td className="px-4 py-3">
+                            {score ? (
+                              <span className={`inline-block px-2 py-1 rounded-full text-xs font-bold ${score.rag === "green" ? "bg-green-100 text-green-700" : score.rag === "amber" ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-700"}`}>
+                                {score.avg}%
+                              </span>
+                            ) : <span className="text-gray-300 text-xs">Not started</span>}
+                          </td>
+                          <td className="px-4 py-3 text-gray-400 text-xs">
+                            {score ? `${score.answered}/${totalQuestions}` : "0/" + totalQuestions}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            {assessment && (
+                              <>
+                                <button onClick={() => router.push(`/report/${assessment.id}`)} className="text-blue-600 hover:underline text-xs font-medium mr-3">Report</button>
+                                <button onClick={() => router.push(`/assess/${assessment.id}`)} className="text-gray-500 hover:underline text-xs mr-3">Edit</button>
+                              </>
+                            )}
+                            <button onClick={() => handleDeleteSchool(school.id, school.name)} className="text-red-400 hover:text-red-600 text-xs">Delete</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
           </div>
         )}
 
-        {/* Users tab */}
+        {/* USERS TAB */}
         {tab === "users" && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* User list */}
-            <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-              <div className="px-5 py-4 border-b bg-gray-50">
-                <h2 className="font-semibold text-gray-800">All Users</h2>
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h2 className="font-semibold text-gray-800 text-lg">All Users</h2>
+              <button onClick={() => setShowUserForm(!showUserForm)}
+                className="bg-blue-700 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                + Add User
+              </button>
+            </div>
+
+            {/* Add user form */}
+            {showUserForm && (
+              <div className="bg-white rounded-xl shadow-sm border p-5">
+                <h3 className="font-semibold text-gray-800 mb-4">New User</h3>
+                <form onSubmit={handleCreateUser} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Username *</label>
+                    <input type="text" value={newUsername} onChange={e => setNewUsername(e.target.value)}
+                      placeholder="e.g. stjohns.it" required
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Password *</label>
+                    <input type="text" value={newPassword} onChange={e => setNewPassword(e.target.value)}
+                      placeholder="Set a strong password" required
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Role *</label>
+                    <select value={newRole} onChange={e => setNewRole(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <option value="user">School User</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </div>
+                  {newRole === "user" && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">School *</label>
+                      <select value={newSchoolId} onChange={e => setNewSchoolId(e.target.value)} required
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">— Select a school —</option>
+                        {schools.map(s => (
+                          <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  {userError && <div className="sm:col-span-2 text-red-600 text-sm bg-red-50 border border-red-200 px-3 py-2 rounded-lg">{userError}</div>}
+                  <div className="sm:col-span-2 flex gap-2">
+                    <button type="submit" disabled={creatingUser}
+                      className="bg-blue-700 hover:bg-blue-800 text-white px-5 py-2 rounded-lg text-sm font-medium disabled:opacity-50 transition-colors">
+                      {creatingUser ? "Creating..." : "Create User"}
+                    </button>
+                    <button type="button" onClick={() => setShowUserForm(false)}
+                      className="text-gray-500 hover:text-gray-700 px-4 py-2 text-sm">Cancel</button>
+                  </div>
+                </form>
               </div>
+            )}
+
+            {/* Users list */}
+            <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
               {loading ? (
                 <div className="p-6 text-center text-gray-400">Loading...</div>
               ) : (
-                <div className="divide-y">
-                  {users.map((u) => (
-                    <div key={u.id} className="px-5 py-4 flex items-center justify-between">
-                      <div>
-                        <div className="font-medium text-gray-800">{u.username}</div>
-                        {u.school_name && (
-                          <div className="text-xs text-gray-500">{u.school_name}</div>
-                        )}
-                        <div className="flex items-center gap-2 mt-1">
-                          <span
-                            className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                              u.role === "admin"
-                                ? "bg-purple-100 text-purple-700"
-                                : "bg-blue-100 text-blue-700"
-                            }`}
-                          >
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-gray-50 text-gray-500 text-left">
+                      <th className="px-5 py-3 font-medium">Username</th>
+                      <th className="px-5 py-3 font-medium">Role</th>
+                      <th className="px-5 py-3 font-medium">School</th>
+                      <th className="px-5 py-3 font-medium">Created</th>
+                      <th className="px-5 py-3 font-medium"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {users.map((u) => (
+                      <tr key={u.id} className="hover:bg-gray-50">
+                        <td className="px-5 py-3 font-medium text-gray-800">{u.username}</td>
+                        <td className="px-5 py-3">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${u.role === "admin" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"}`}>
                             {u.role}
                           </span>
-                          <span className="text-xs text-gray-400">
-                            Created {new Date(u.created_at).toLocaleDateString("en-GB")}
-                          </span>
-                        </div>
-                      </div>
-                      {u.username !== "admin" && (
-                        <button
-                          onClick={() => handleDeleteUser(u.id, u.username)}
-                          className="text-red-500 hover:text-red-700 text-sm font-medium"
-                        >
-                          Delete
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                        </td>
+                        <td className="px-5 py-3 text-gray-500">{u.school_name ?? <span className="text-gray-300">—</span>}</td>
+                        <td className="px-5 py-3 text-gray-400 text-xs">{new Date(u.created_at).toLocaleDateString("en-GB")}</td>
+                        <td className="px-5 py-3">
+                          {u.username !== "admin" && (
+                            <button onClick={() => handleDeleteUser(u.id, u.username)} className="text-red-400 hover:text-red-600 text-sm">Delete</button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               )}
-            </div>
-
-            {/* Create user form */}
-            <div className="bg-white rounded-xl shadow-sm border p-6">
-              <h2 className="font-semibold text-gray-800 mb-4">Create New User</h2>
-              <form onSubmit={handleCreateUser} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
-                  <input
-                    type="text"
-                    value={newUsername}
-                    onChange={(e) => setNewUsername(e.target.value)}
-                    placeholder="e.g. stjohns-it"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                  <input
-                    type="text"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Set a strong password"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                  <select
-                    value={newRole}
-                    onChange={(e) => setNewRole(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  >
-                    <option value="user">School User</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    School Name <span className="text-gray-400 font-normal">(optional)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={newSchool}
-                    onChange={(e) => setNewSchool(e.target.value)}
-                    placeholder="e.g. St John's Primary School"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-
-                {createError && (
-                  <div className="text-red-600 text-sm bg-red-50 border border-red-200 px-3 py-2 rounded-lg">
-                    {createError}
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={creating}
-                  className="w-full bg-blue-700 hover:bg-blue-800 text-white py-2 rounded-lg font-medium text-sm transition-colors disabled:opacity-50"
-                >
-                  {creating ? "Creating..." : "Create User"}
-                </button>
-              </form>
             </div>
           </div>
         )}

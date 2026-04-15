@@ -22,31 +22,40 @@ export function getDb(): Database.Database {
 
 function initSchema(db: Database.Database) {
   db.exec(`
+    CREATE TABLE IF NOT EXISTS schools (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      urn TEXT,
+      address TEXT,
+      created_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       username TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL,
       role TEXT NOT NULL DEFAULT 'user',
-      school_name TEXT,
+      school_id TEXT REFERENCES schools(id),
       created_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS assessments (
       id TEXT PRIMARY KEY,
+      school_id TEXT REFERENCES schools(id),
       school_name TEXT NOT NULL,
-      user_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
-      answers TEXT NOT NULL DEFAULT '{}',
-      FOREIGN KEY (user_id) REFERENCES users(id)
+      answers TEXT NOT NULL DEFAULT '{}'
     );
   `);
 
-  // Add user_id column to existing assessments table if it doesn't exist
-  try {
-    db.exec(`ALTER TABLE assessments ADD COLUMN user_id TEXT REFERENCES users(id);`);
-  } catch {
-    // Column already exists — safe to ignore
+  // Migrate existing tables — add new columns if they don't exist
+  const migrations = [
+    `ALTER TABLE users ADD COLUMN school_id TEXT REFERENCES schools(id);`,
+    `ALTER TABLE assessments ADD COLUMN school_id TEXT REFERENCES schools(id);`,
+  ];
+  for (const sql of migrations) {
+    try { db.exec(sql); } catch { /* already exists */ }
   }
 }
 
@@ -60,10 +69,18 @@ function seedAdmin(db: Database.Database) {
   }
 }
 
+export interface School {
+  id: string;
+  name: string;
+  urn: string | null;
+  address: string | null;
+  created_at: string;
+}
+
 export interface Assessment {
   id: string;
+  school_id: string | null;
   school_name: string;
-  user_id: string | null;
   created_at: string;
   updated_at: string;
   answers: string;
@@ -74,6 +91,6 @@ export interface User {
   username: string;
   password_hash: string;
   role: "admin" | "user";
-  school_name: string | null;
+  school_id: string | null;
   created_at: string;
 }
