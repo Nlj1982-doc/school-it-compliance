@@ -121,6 +121,33 @@ function initSchema(db: Database.Database) {
       notes TEXT,
       created_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS network_devices (
+      id TEXT PRIMARY KEY,
+      school_id TEXT NOT NULL REFERENCES schools(id),
+      device_type TEXT NOT NULL,
+      asset_tag TEXT,
+      device_name TEXT,
+      make TEXT,
+      model TEXT,
+      serial_number TEXT,
+      ip_address TEXT,
+      mac_address TEXT,
+      management_url TEXT,
+      vlan TEXT,
+      port_count TEXT,
+      firmware_version TEXT,
+      location TEXT,
+      cabinet TEXT,
+      purchase_date TEXT,
+      warranty_end_date TEXT,
+      warranty_type TEXT,
+      support_contract TEXT,
+      support_expiry TEXT,
+      status TEXT NOT NULL DEFAULT 'Active',
+      notes TEXT,
+      created_at TEXT NOT NULL
+    );
   `);
 }
 

@@ -15,6 +15,7 @@ export default function SchoolNav({ schoolId, schoolName }: Props) {
     { label: "Profile", href: `/admin/schools/${schoolId}` },
     { label: "Contracts", href: `/admin/schools/${schoolId}/contracts` },
     { label: "Asset Log", href: `/admin/schools/${schoolId}/assets` },
+    { label: "Network", href: `/admin/schools/${schoolId}/network` },
   ];
 
   const isActive = (href: string) => pathname === href;
