@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
+import NavBar from "@/components/NavBar";
 import {
   frameworks,
   getTotalQuestions,
@@ -92,6 +93,7 @@ export default function AssessPage() {
             >
               View Report
             </button>
+            <NavBar />
           </div>
         </div>
         {/* Progress bar */}

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { frameworks, getTotalQuestions, getFrameworkScore } from "@/lib/frameworks";
 import type { QuestionStatus } from "@/lib/frameworks";
+import NavBar from "@/components/NavBar";
 
 interface Assessment {
   id: string;
@@ -62,6 +63,9 @@ export default function HomePage() {
             Self-assessment tool covering all mandatory UK frameworks — KCSiE, DfE Filtering Standards,
             Cyber Essentials, UK GDPR, Online Safety Act 2023, and Ofsted requirements.
           </p>
+          <div className="mt-3 ml-12">
+            <NavBar />
+          </div>
         </div>
       </div>
 
