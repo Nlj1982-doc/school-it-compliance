@@ -34,6 +34,15 @@ interface User {
 
 type Tab = "schools" | "users";
 
+interface ResetPasswordState {
+  userId: string;
+  username: string;
+  newPassword: string;
+  saving: boolean;
+  error: string;
+  success: boolean;
+}
+
 export default function AdminPage() {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("schools");
@@ -41,6 +50,7 @@ export default function AdminPage() {
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  const [resetState, setResetState] = useState<ResetPasswordState | null>(null);
 
   // New school form
   const [newSchoolName, setNewSchoolName] = useState("");
@@ -132,6 +142,24 @@ export default function AdminPage() {
       body: JSON.stringify({ id }),
     });
     loadAll();
+  }
+
+  async function handleResetPassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (!resetState) return;
+    setResetState(s => s ? { ...s, saving: true, error: "" } : s);
+    const res = await fetch("/api/admin/users", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: resetState.userId, password: resetState.newPassword }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setResetState(s => s ? { ...s, saving: false, error: data.error ?? "Failed to reset password" } : s);
+    } else {
+      setResetState(s => s ? { ...s, saving: false, success: true } : s);
+      setTimeout(() => setResetState(null), 1500);
+    }
   }
 
   function getSchoolScore(schoolId: string) {
@@ -407,7 +435,13 @@ export default function AdminPage() {
                         </td>
                         <td className="px-5 py-3 text-gray-500">{u.school_name ?? <span className="text-gray-300">—</span>}</td>
                         <td className="px-5 py-3 text-gray-400 text-xs">{new Date(u.created_at).toLocaleDateString("en-GB")}</td>
-                        <td className="px-5 py-3">
+                        <td className="px-5 py-3 whitespace-nowrap">
+                          <button
+                            onClick={() => setResetState({ userId: u.id, username: u.username, newPassword: "", saving: false, error: "", success: false })}
+                            className="text-blue-500 hover:text-blue-700 text-sm mr-3 font-medium"
+                          >
+                            Reset Password
+                          </button>
                           {u.username !== "admin" && (
                             <button onClick={() => handleDeleteUser(u.id, u.username)} className="text-red-400 hover:text-red-600 text-sm">Delete</button>
                           )}
@@ -421,6 +455,59 @@ export default function AdminPage() {
           </div>
         )}
       </div>
+
+      {/* Reset Password Modal */}
+      {resetState && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-1">Reset Password</h3>
+            <p className="text-sm text-gray-500 mb-5">
+              Set a new password for <span className="font-medium text-gray-700">{resetState.username}</span>
+            </p>
+            <form onSubmit={handleResetPassword} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+                <input
+                  type="text"
+                  value={resetState.newPassword}
+                  onChange={e => setResetState(s => s ? { ...s, newPassword: e.target.value } : s)}
+                  placeholder="Enter new password (min 6 chars)"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                  minLength={6}
+                  autoFocus
+                />
+              </div>
+              {resetState.error && (
+                <div className="text-red-600 text-sm bg-red-50 border border-red-200 px-3 py-2 rounded-lg">
+                  {resetState.error}
+                </div>
+              )}
+              {resetState.success && (
+                <div className="text-green-700 text-sm bg-green-50 border border-green-200 px-3 py-2 rounded-lg">
+                  ✓ Password updated successfully
+                </div>
+              )}
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="submit"
+                  disabled={resetState.saving || resetState.success}
+                  className="flex-1 bg-blue-700 hover:bg-blue-800 text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50 transition-colors"
+                >
+                  {resetState.saving ? "Saving..." : "Save New Password"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setResetState(null)}
+                  className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

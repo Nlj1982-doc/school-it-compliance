@@ -49,6 +49,23 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true, id });
 }
 
+export async function PATCH(req: NextRequest) {
+  if (!(await requireAdmin())) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const { id, password } = await req.json();
+  if (!id || !password || password.length < 6) {
+    return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 });
+  }
+  const db = getDb();
+  const hash = bcrypt.hashSync(password, 10);
+  const result = db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hash, id);
+  if (result.changes === 0) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+  return NextResponse.json({ ok: true });
+}
+
 export async function DELETE(req: NextRequest) {
   const session = await requireAdmin();
   if (!session) {
