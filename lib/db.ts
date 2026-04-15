@@ -53,6 +53,31 @@ function initSchema(db: Database.Database) {
   const migrations = [
     `ALTER TABLE users ADD COLUMN school_id TEXT REFERENCES schools(id);`,
     `ALTER TABLE assessments ADD COLUMN school_id TEXT REFERENCES schools(id);`,
+    // School contact fields
+    `ALTER TABLE schools ADD COLUMN address_line1 TEXT;`,
+    `ALTER TABLE schools ADD COLUMN address_line2 TEXT;`,
+    `ALTER TABLE schools ADD COLUMN city TEXT;`,
+    `ALTER TABLE schools ADD COLUMN postcode TEXT;`,
+    `ALTER TABLE schools ADD COLUMN phone TEXT;`,
+    `ALTER TABLE schools ADD COLUMN website TEXT;`,
+    // Head Teacher
+    `ALTER TABLE schools ADD COLUMN ht_name TEXT;`,
+    `ALTER TABLE schools ADD COLUMN ht_email TEXT;`,
+    `ALTER TABLE schools ADD COLUMN ht_phone TEXT;`,
+    // Designated Safeguarding Lead
+    `ALTER TABLE schools ADD COLUMN dsl_name TEXT;`,
+    `ALTER TABLE schools ADD COLUMN dsl_email TEXT;`,
+    `ALTER TABLE schools ADD COLUMN dsl_phone TEXT;`,
+    // Technical Lead
+    `ALTER TABLE schools ADD COLUMN tech_name TEXT;`,
+    `ALTER TABLE schools ADD COLUMN tech_email TEXT;`,
+    `ALTER TABLE schools ADD COLUMN tech_phone TEXT;`,
+    // Managed Service Provider
+    `ALTER TABLE schools ADD COLUMN msp_name TEXT;`,
+    `ALTER TABLE schools ADD COLUMN msp_contact TEXT;`,
+    `ALTER TABLE schools ADD COLUMN msp_email TEXT;`,
+    `ALTER TABLE schools ADD COLUMN msp_phone TEXT;`,
+    `ALTER TABLE schools ADD COLUMN msp_contract_expiry TEXT;`,
   ];
   for (const sql of migrations) {
     try { db.exec(sql); } catch { /* already exists */ }
@@ -74,6 +99,26 @@ export interface School {
   name: string;
   urn: string | null;
   address: string | null;
+  address_line1: string | null;
+  address_line2: string | null;
+  city: string | null;
+  postcode: string | null;
+  phone: string | null;
+  website: string | null;
+  ht_name: string | null;
+  ht_email: string | null;
+  ht_phone: string | null;
+  dsl_name: string | null;
+  dsl_email: string | null;
+  dsl_phone: string | null;
+  tech_name: string | null;
+  tech_email: string | null;
+  tech_phone: string | null;
+  msp_name: string | null;
+  msp_contact: string | null;
+  msp_email: string | null;
+  msp_phone: string | null;
+  msp_contract_expiry: string | null;
   created_at: string;
 }
 

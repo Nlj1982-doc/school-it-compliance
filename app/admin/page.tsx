@@ -330,10 +330,11 @@ export default function AdminPage() {
                             {score ? `${score.answered}/${totalQuestions}` : "0/" + totalQuestions}
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap">
+                            <button onClick={() => router.push(`/admin/schools/${school.id}`)} className="text-blue-600 hover:underline text-xs font-medium mr-3">Profile</button>
                             {assessment && (
                               <>
                                 <button onClick={() => router.push(`/report/${assessment.id}`)} className="text-blue-600 hover:underline text-xs font-medium mr-3">Report</button>
-                                <button onClick={() => router.push(`/assess/${assessment.id}`)} className="text-gray-500 hover:underline text-xs mr-3">Edit</button>
+                                <button onClick={() => router.push(`/assess/${assessment.id}`)} className="text-gray-500 hover:underline text-xs mr-3">Assessment</button>
                               </>
                             )}
                             <button onClick={() => handleDeleteSchool(school.id, school.name)} className="text-red-400 hover:text-red-600 text-xs">Delete</button>
