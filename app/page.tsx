@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { frameworks, getTotalQuestions, getFrameworkScore } from "@/lib/frameworks";
 import type { QuestionStatus } from "@/lib/frameworks";
-import NavBar from "@/components/NavBar";
+import UserNav from "@/components/UserNav";
 
 interface Assessment {
   id: string;
@@ -14,29 +14,18 @@ interface Assessment {
   answers: string;
 }
 
-interface SessionUser {
-  userId: string;
-  username: string;
-  role: string;
-  schoolId: string | null;
-  schoolName: string | null;
-}
-
 export default function HomePage() {
   const router = useRouter();
-  const [user, setUser] = useState<SessionUser | null>(null);
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [fetching, setFetching] = useState(true);
 
   useEffect(() => {
-    Promise.all([
-      fetch("/api/auth/me").then(r => r.json()),
-      fetch("/api/assessments").then(r => r.json()),
-    ]).then(([me, a]) => {
-      setUser(me.user);
-      setAssessments(Array.isArray(a) ? a : []);
-      setFetching(false);
-    });
+    fetch("/api/assessments")
+      .then(r => r.json())
+      .then(a => {
+        setAssessments(Array.isArray(a) ? a : []);
+        setFetching(false);
+      });
   }, []);
 
   function getOverallRag(answers: Record<string, QuestionStatus>) {
@@ -58,20 +47,7 @@ export default function HomePage() {
 
   return (
     <main className="min-h-screen bg-gray-50">
-      <div className="bg-blue-800 text-white py-8 px-4">
-        <div className="max-w-4xl mx-auto">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="text-3xl">🏫</span>
-              <div>
-                <h1 className="text-2xl font-bold">UK School IT Compliance</h1>
-                {user?.schoolName && <p className="text-blue-200 mt-0.5">{user.schoolName}</p>}
-              </div>
-            </div>
-            <NavBar />
-          </div>
-        </div>
-      </div>
+      <UserNav />
 
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Stats */}
