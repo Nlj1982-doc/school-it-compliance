@@ -255,6 +255,33 @@ function initSchema(db: Database.Database) {
       error_message TEXT,
       polled_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS netmgmt_connections (
+      id TEXT PRIMARY KEY,
+      school_id TEXT NOT NULL REFERENCES schools(id),
+      provider TEXT NOT NULL,
+      label TEXT NOT NULL,
+      config TEXT NOT NULL,
+      last_polled TEXT,
+      last_error TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS netmgmt_devices (
+      id TEXT PRIMARY KEY,
+      school_id TEXT NOT NULL REFERENCES schools(id),
+      connection_id TEXT NOT NULL REFERENCES netmgmt_connections(id),
+      device_name TEXT NOT NULL,
+      device_type TEXT,
+      model TEXT,
+      mac_address TEXT,
+      ip_address TEXT,
+      firmware_version TEXT,
+      latest_firmware TEXT,
+      upgrade_available INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'Unknown',
+      polled_at TEXT NOT NULL
+    );
   `);
 }
 

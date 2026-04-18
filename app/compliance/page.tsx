@@ -62,6 +62,31 @@ interface DirectoryUser {
   synced_at: string;
 }
 
+interface NetConn {
+  id: string;
+  provider: string;
+  label: string;
+  last_polled: string | null;
+  last_error: string | null;
+}
+
+interface NetDevice {
+  id: string;
+  connection_id: string;
+  provider: string;
+  label: string;
+  device_name: string;
+  device_type: string | null;
+  model: string | null;
+  mac_address: string | null;
+  ip_address: string | null;
+  firmware_version: string | null;
+  latest_firmware: string | null;
+  upgrade_available: number;
+  status: string;
+  polled_at: string;
+}
+
 // ─── Provider metadata ───────────────────────────────────────────────────────
 
 const PROVIDER_META: Record<
@@ -151,6 +176,302 @@ function fmtDate(iso: string | null): string {
   } catch {
     return iso;
   }
+}
+
+// ─── Network Management Provider metadata ────────────────────────────────────
+
+type NetMgmtProviderKey = "unifi" | "meraki" | "aruba" | "extreme";
+
+const NET_PROVIDER_META: Record<
+  NetMgmtProviderKey,
+  {
+    label: string;
+    badge: string;
+    badgeBg: string;
+    instructions: string;
+    fields: Array<{ key: string; label: string; type: string; placeholder?: string; isCheckbox?: boolean; defaultValue?: string }>;
+  }
+> = {
+  unifi: {
+    label: "Ubiquiti UniFi",
+    badge: "U",
+    badgeBg: "bg-blue-600",
+    fields: [
+      { key: "host", label: "Controller URL", type: "text", placeholder: "https://192.168.1.1:8443" },
+      { key: "username", label: "Username", type: "text" },
+      { key: "password", label: "Password", type: "password" },
+      { key: "site", label: "Site", type: "text", placeholder: "default", defaultValue: "default" },
+      { key: "unifiOs", label: "UniFi OS device (UDM/UCK Gen2+)", type: "checkbox", isCheckbox: true },
+    ],
+    instructions:
+      "Settings → System → Advanced: ensure API is accessible. For UDM Pro or UCK Gen2+, tick the 'UniFi OS device' checkbox above.",
+  },
+  meraki: {
+    label: "Cisco Meraki",
+    badge: "M",
+    badgeBg: "bg-green-600",
+    fields: [
+      { key: "apiKey", label: "API Key", type: "password" },
+      { key: "organizationId", label: "Organization ID", type: "text" },
+    ],
+    instructions:
+      "Dashboard → Organization → API access → enable API, then generate a key. Find your Organization ID in the Dashboard URL.",
+  },
+  aruba: {
+    label: "Aruba Central",
+    badge: "A",
+    badgeBg: "bg-orange-500",
+    fields: [
+      { key: "baseUrl", label: "Base URL", type: "text", placeholder: "https://apigw-prod2.central.arubanetworks.com" },
+      { key: "clientId", label: "Client ID", type: "text" },
+      { key: "clientSecret", label: "Client Secret", type: "password" },
+    ],
+    instructions:
+      "Account Home → Global Settings → API Gateway → OAuth2 Clients → create a client with 'monitoring' scope.",
+  },
+  extreme: {
+    label: "Extreme Networks XIQ",
+    badge: "X",
+    badgeBg: "bg-red-600",
+    fields: [
+      { key: "apiToken", label: "API Token", type: "password" },
+    ],
+    instructions:
+      "XIQ Portal → Global Settings → API Token → generate a long-lived token and paste it here.",
+  },
+};
+
+const NET_TYPE_STYLES: Record<string, string> = {
+  switch: "bg-blue-100 text-blue-700",
+  ap: "bg-green-100 text-green-700",
+  firewall: "bg-purple-100 text-purple-700",
+  gateway: "bg-indigo-100 text-indigo-700",
+  router: "bg-gray-100 text-gray-600",
+};
+
+function timeAgo(iso: string | null): string {
+  if (!iso) return "Never";
+  try {
+    const diff = Date.now() - new Date(iso).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return "Just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.floor(hrs / 24)}d ago`;
+  } catch {
+    return iso;
+  }
+}
+
+// ─── Net Management Provider Badge ───────────────────────────────────────────
+
+function NetProviderBadge({ provider }: { provider: string }) {
+  const meta = NET_PROVIDER_META[provider as NetMgmtProviderKey];
+  if (!meta) {
+    return (
+      <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-gray-400 text-white text-xs font-bold">
+        ?
+      </span>
+    );
+  }
+  return (
+    <span
+      className={`inline-flex items-center justify-center w-8 h-8 rounded-full ${meta.badgeBg} text-white text-xs font-bold`}
+    >
+      {meta.badge}
+    </span>
+  );
+}
+
+// ─── Connect Platform Modal ───────────────────────────────────────────────────
+
+interface ConnectNetModalProps {
+  onClose: () => void;
+  onSaved: () => void;
+}
+
+function ConnectNetModal({ onClose, onSaved }: ConnectNetModalProps) {
+  const [provider, setProvider] = useState<NetMgmtProviderKey>("unifi");
+  const [label, setLabel] = useState("");
+  const [fields, setFields] = useState<Record<string, string>>({});
+  const [checkboxes, setCheckboxes] = useState<Record<string, boolean>>({});
+  const [showInstructions, setShowInstructions] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const meta = NET_PROVIDER_META[provider];
+
+  function handleProviderChange(p: NetMgmtProviderKey) {
+    setProvider(p);
+    setFields({});
+    setCheckboxes({});
+    setError(null);
+    setShowInstructions(false);
+  }
+
+  function setField(key: string, value: string) {
+    setFields((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function setCheckbox(key: string, value: boolean) {
+    setCheckboxes((prev) => ({ ...prev, [key]: value }));
+  }
+
+  async function handleSave() {
+    setError(null);
+    if (!label.trim()) { setError("Label is required"); return; }
+
+    // Build config — merge text fields and checkboxes
+    const config: Record<string, unknown> = {};
+    for (const f of meta.fields) {
+      if (f.isCheckbox) {
+        config[f.key] = checkboxes[f.key] === true;
+      } else {
+        const val = fields[f.key]?.trim() || f.defaultValue || "";
+        config[f.key] = val;
+        if (!val && f.type !== "checkbox") {
+          setError(`Missing: ${f.label}`);
+          return;
+        }
+      }
+    }
+
+    setSaving(true);
+    try {
+      const res = await fetch("/api/my/netmgmt/connections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, label: label.trim(), config }),
+      });
+      if (!res.ok) {
+        const body2 = (await res.json()) as { error?: string };
+        throw new Error(body2.error ?? "Save failed");
+      }
+      onSaved();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-lg font-semibold text-gray-800">Connect Platform</h2>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl font-bold">
+              ×
+            </button>
+          </div>
+
+          {/* Provider selector */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Provider</label>
+            <div className="grid grid-cols-2 gap-2">
+              {(Object.keys(NET_PROVIDER_META) as NetMgmtProviderKey[]).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => handleProviderChange(p)}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                    provider === p
+                      ? "border-blue-600 bg-blue-50 text-blue-700"
+                      : "border-gray-200 text-gray-600 hover:border-gray-300"
+                  }`}
+                >
+                  <NetProviderBadge provider={p} />
+                  {NET_PROVIDER_META[p].label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Label */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Friendly Name <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder={`e.g. ${meta.label} — Main Site`}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {/* Dynamic fields */}
+          {meta.fields.map((f) =>
+            f.isCheckbox ? (
+              <div key={f.key} className="mb-4 flex items-center gap-2">
+                <input
+                  id={`net-field-${f.key}`}
+                  type="checkbox"
+                  checked={checkboxes[f.key] === true}
+                  onChange={(e) => setCheckbox(f.key, e.target.checked)}
+                  className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                />
+                <label htmlFor={`net-field-${f.key}`} className="text-sm text-gray-700">
+                  {f.label}
+                </label>
+              </div>
+            ) : (
+              <div key={f.key} className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {f.label} <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type={f.type}
+                  value={fields[f.key] ?? ""}
+                  onChange={(e) => setField(f.key, e.target.value)}
+                  placeholder={f.placeholder}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            )
+          )}
+
+          {/* Setup instructions (collapsible) */}
+          <div className="mb-4">
+            <button
+              onClick={() => setShowInstructions(!showInstructions)}
+              className="text-sm text-blue-600 hover:underline flex items-center gap-1"
+            >
+              <span>{showInstructions ? "▾" : "▸"}</span>
+              Setup instructions
+            </button>
+            {showInstructions && (
+              <p className="mt-2 text-xs text-gray-600 bg-blue-50 rounded-lg p-3 leading-relaxed">
+                {meta.instructions}
+              </p>
+            )}
+          </div>
+
+          {error && (
+            <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 mb-4">{error}</p>
+          )}
+
+          <div className="flex gap-3 justify-end">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="bg-blue-700 hover:bg-blue-800 disabled:opacity-50 text-white px-5 py-2 rounded-lg font-medium text-sm transition-colors"
+            >
+              {saving ? "Saving…" : "Save Connection"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ProviderBadge({ provider }: { provider: string }) {
@@ -379,6 +700,12 @@ export default function CompliancePage() {
   const [dirConnections, setDirConnections] = useState<DirectoryConnection[]>([]);
   const [adminUsers, setAdminUsers] = useState<DirectoryUser[]>([]);
 
+  // ── Network Firmware state
+  const [netConnections, setNetConnections] = useState<NetConn[]>([]);
+  const [netDevices, setNetDevices] = useState<NetDevice[]>([]);
+  const [netModal, setNetModal] = useState(false);
+  const [netSyncing, setNetSyncing] = useState<Record<string, boolean>>({});
+
   const fetchBackup = useCallback(async () => {
     try {
       const res = await fetch("/api/my/backup/sync");
@@ -410,6 +737,19 @@ export default function CompliancePage() {
     }
   }, []);
 
+  const fetchNetMgmt = useCallback(async () => {
+    try {
+      const res = await fetch("/api/my/netmgmt/sync");
+      if (res.ok) {
+        const data = (await res.json()) as { connections: NetConn[]; devices: NetDevice[] };
+        setNetConnections(data.connections ?? []);
+        setNetDevices(data.devices ?? []);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
   useEffect(() => {
     Promise.all([
       fetch("/api/assessments")
@@ -421,8 +761,9 @@ export default function CompliancePage() {
         }),
       fetchBackup(),
       fetchDirectory(),
+      fetchNetMgmt(),
     ]);
-  }, [fetchBackup, fetchDirectory]);
+  }, [fetchBackup, fetchDirectory, fetchNetMgmt]);
 
   async function handleSyncNow(connectionId: string) {
     setSyncing(connectionId);
@@ -452,6 +793,36 @@ export default function CompliancePage() {
       body: JSON.stringify({ id: connectionId }),
     });
     await fetchBackup();
+  }
+
+  async function handleNetSyncNow(connectionId: string) {
+    setNetSyncing((prev) => ({ ...prev, [connectionId]: true }));
+    try {
+      const res = await fetch("/api/my/netmgmt/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ connectionId }),
+      });
+      if (!res.ok) {
+        const body = (await res.json()) as { error?: string };
+        alert(body.error ?? "Sync failed");
+      }
+    } catch {
+      alert("Sync failed");
+    } finally {
+      setNetSyncing((prev) => ({ ...prev, [connectionId]: false }));
+      await fetchNetMgmt();
+    }
+  }
+
+  async function handleNetDeleteConnection(connectionId: string) {
+    if (!confirm("Remove this network platform connection and all device data?")) return;
+    await fetch("/api/my/netmgmt/connections", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: connectionId }),
+    });
+    await fetchNetMgmt();
   }
 
   const totalQuestions = getTotalQuestions();
@@ -508,6 +879,16 @@ export default function CompliancePage() {
           onSaved={async () => {
             setShowConnectModal(false);
             await fetchBackup();
+          }}
+        />
+      )}
+
+      {netModal && (
+        <ConnectNetModal
+          onClose={() => setNetModal(false)}
+          onSaved={async () => {
+            setNetModal(false);
+            await fetchNetMgmt();
           }}
         />
       )}
@@ -858,6 +1239,158 @@ export default function CompliancePage() {
                 </p>
               )}
             </>
+          )}
+        </div>
+
+        {/* ── Network Firmware ──────────────────────────────────────────────── */}
+        <div className="bg-white rounded-xl shadow-sm border p-6">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <h3 className="font-semibold text-gray-800">Network Firmware Versions</h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Monitor firmware across your switches, firewalls and wireless access points.
+              </p>
+            </div>
+            <button
+              onClick={() => setNetModal(true)}
+              className="bg-blue-700 hover:bg-blue-800 text-white px-4 py-1.5 rounded-lg text-sm font-medium transition-colors flex-shrink-0 ml-4"
+            >
+              + Connect Platform
+            </button>
+          </div>
+
+          {netConnections.length === 0 ? (
+            <div className="text-center py-10 mt-2">
+              <div className="text-4xl mb-3">🌐</div>
+              <p className="text-gray-500 text-sm">
+                No network platforms connected. Add a platform above to monitor firmware versions.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-5 mt-4">
+              {netConnections.map((conn) => {
+                const connDevices = netDevices.filter((d) => d.connection_id === conn.id);
+                const isSyncing = netSyncing[conn.id] === true;
+                return (
+                  <div key={conn.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                    {/* Connection header */}
+                    <div className="flex items-center gap-3 px-4 py-3 bg-gray-50 border-b border-gray-200">
+                      <NetProviderBadge provider={conn.provider} />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-gray-800 text-sm truncate">{conn.label}</div>
+                        <div className="text-xs text-gray-400">
+                          Last synced {timeAgo(conn.last_polled)}
+                        </div>
+                        {conn.last_error && (
+                          <div className="text-xs text-red-600 mt-0.5 truncate">{conn.last_error}</div>
+                        )}
+                      </div>
+                      <div className="flex gap-2 flex-shrink-0">
+                        <button
+                          onClick={() => handleNetSyncNow(conn.id)}
+                          disabled={isSyncing}
+                          className="text-sm px-3 py-1 rounded-lg border border-blue-600 text-blue-600 hover:bg-blue-50 disabled:opacity-50 transition-colors"
+                        >
+                          {isSyncing ? "Syncing…" : "Sync Now"}
+                        </button>
+                        <button
+                          onClick={() => handleNetDeleteConnection(conn.id)}
+                          className="text-sm px-3 py-1 rounded-lg border border-gray-200 text-gray-500 hover:text-red-600 hover:border-red-300 transition-colors"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Device table */}
+                    {connDevices.length === 0 ? (
+                      <div className="px-4 py-4 text-sm text-gray-400 italic">
+                        No device data yet — click Sync Now to fetch results.
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-gray-50 border-b border-gray-100">
+                              <th className="text-left px-4 py-2.5 font-medium text-gray-600">Device</th>
+                              <th className="text-left px-4 py-2.5 font-medium text-gray-600">Type</th>
+                              <th className="text-left px-4 py-2.5 font-medium text-gray-600 hidden sm:table-cell">Model</th>
+                              <th className="text-left px-4 py-2.5 font-medium text-gray-600 hidden md:table-cell">IP</th>
+                              <th className="text-left px-4 py-2.5 font-medium text-gray-600">Firmware</th>
+                              <th className="text-left px-4 py-2.5 font-medium text-gray-600">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {connDevices.map((dev) => (
+                              <tr key={dev.id} className="hover:bg-gray-50 transition-colors">
+                                <td className="px-4 py-2.5 font-medium text-gray-800 truncate max-w-[10rem]">
+                                  {dev.device_name}
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  {dev.device_type ? (
+                                    <span
+                                      className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                                        NET_TYPE_STYLES[dev.device_type] ?? "bg-gray-100 text-gray-600"
+                                      }`}
+                                    >
+                                      {dev.device_type}
+                                    </span>
+                                  ) : (
+                                    <span className="text-xs text-gray-400">—</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2.5 text-gray-600 hidden sm:table-cell">
+                                  {dev.model ?? "—"}
+                                </td>
+                                <td className="px-4 py-2.5 text-gray-500 hidden md:table-cell font-mono text-xs">
+                                  {dev.ip_address ?? "—"}
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-gray-700 text-xs font-mono">
+                                      {dev.firmware_version ?? "Unknown"}
+                                    </span>
+                                    {dev.upgrade_available === 1 && (
+                                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                                        Update available
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  <span className="flex items-center gap-1.5">
+                                    <span
+                                      className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${
+                                        dev.status === "Online"
+                                          ? "bg-green-500"
+                                          : dev.status === "Offline"
+                                          ? "bg-red-500"
+                                          : "bg-gray-400"
+                                      }`}
+                                    />
+                                    <span
+                                      className={`text-xs font-medium ${
+                                        dev.status === "Online"
+                                          ? "text-green-700"
+                                          : dev.status === "Offline"
+                                          ? "text-red-600"
+                                          : "text-gray-500"
+                                      }`}
+                                    >
+                                      {dev.status}
+                                    </span>
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
 
