@@ -17,14 +17,14 @@ interface Ticket {
   updated_at: string;
 }
 
+interface Me {
+  role: string;
+  canHelpdesk: boolean;
+}
+
 const CATEGORIES = ["Hardware", "Software", "Network / Connectivity", "Account / Access", "Printing", "Interactive Display", "Email", "Other"];
 const PRIORITIES = ["Low", "Normal", "High", "Critical"];
 const STATUSES = ["Open", "In Progress", "Resolved", "Closed"];
-
-const EMPTY: Omit<Ticket, "id" | "created_by" | "created_at" | "updated_at"> = {
-  title: "", description: "", category: "", priority: "Normal",
-  status: "Open", assigned_to: "", resolution: "",
-};
 
 const PRIORITY_STYLES: Record<string, string> = {
   Low: "bg-gray-100 text-gray-600",
@@ -39,11 +39,17 @@ const STATUS_STYLES: Record<string, string> = {
   Closed: "bg-gray-100 text-gray-500",
 };
 
+const MANAGER_EMPTY = { title: "", description: "", category: "", priority: "Normal", status: "Open", assigned_to: "", resolution: "" };
+const USER_EMPTY = { title: "", description: "", category: "", priority: "Normal" };
+
 export default function HelpdeskPage() {
+  const [me, setMe] = useState<Me | null>(null);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | "new" | null>(null);
-  const [form, setForm] = useState<typeof EMPTY>({ ...EMPTY });
+  const [managerForm, setManagerForm] = useState({ ...MANAGER_EMPTY });
+  const [userForm, setUserForm] = useState({ ...USER_EMPTY });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
@@ -51,36 +57,64 @@ export default function HelpdeskPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   async function load() {
-    const rows = await fetch("/api/my/helpdesk").then(r => r.json());
+    const [meData, rows] = await Promise.all([
+      fetch("/api/auth/me").then(r => r.json()),
+      fetch("/api/my/helpdesk").then(r => r.json()),
+    ]);
+    setMe(meData.user);
     setTickets(Array.isArray(rows) ? rows : []);
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
 
-  function startNew() { setForm({ ...EMPTY }); setEditingId("new"); setError(""); setExpandedId(null); }
+  const isManager = me?.role === "admin" || me?.canHelpdesk;
+
+  // Manager form helpers
+  function mSet(field: keyof typeof MANAGER_EMPTY) {
+    return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+      setManagerForm(f => ({ ...f, [field]: e.target.value }));
+  }
+  function uSet(field: keyof typeof USER_EMPTY) {
+    return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+      setUserForm(f => ({ ...f, [field]: e.target.value }));
+  }
+
+  function startNew() {
+    setManagerForm({ ...MANAGER_EMPTY }); setUserForm({ ...USER_EMPTY });
+    setEditingId("new"); setError(""); setExpandedId(null);
+  }
   function startEdit(t: Ticket) {
-    setForm({
+    setManagerForm({
       title: t.title, description: t.description ?? "", category: t.category ?? "",
       priority: t.priority, status: t.status, assigned_to: t.assigned_to ?? "", resolution: t.resolution ?? "",
     });
     setEditingId(t.id); setError(""); setExpandedId(null);
   }
-  function set(field: keyof typeof form) {
-    return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
-      setForm(f => ({ ...f, [field]: e.target.value }));
-  }
+  function cancelForm() { setEditingId(null); setShowForm(false); setError(""); }
 
-  async function handleSave(e: React.FormEvent) {
+  async function handleManagerSave(e: React.FormEvent) {
     e.preventDefault(); setSaving(true); setError("");
     const isNew = editingId === "new";
     const res = await fetch("/api/my/helpdesk", {
       method: isNew ? "POST" : "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(isNew ? form : { id: editingId, ...form }),
+      body: JSON.stringify(isNew ? managerForm : { id: editingId, ...managerForm }),
     });
     setSaving(false);
     if (!res.ok) { setError((await res.json()).error ?? "Failed to save"); return; }
     setEditingId(null); load();
+  }
+
+  async function handleUserSubmit(e: React.FormEvent) {
+    e.preventDefault(); setSaving(true); setError("");
+    const res = await fetch("/api/my/helpdesk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(userForm),
+    });
+    setSaving(false);
+    if (!res.ok) { setError((await res.json()).error ?? "Failed to submit"); return; }
+    setShowForm(false); setUserForm({ ...USER_EMPTY }); load();
   }
 
   async function handleStatusChange(ticket: Ticket, newStatus: string) {
@@ -115,6 +149,16 @@ export default function HelpdeskPage() {
       <UserNav />
       <div className="max-w-5xl mx-auto px-4 py-6">
 
+        {/* Header + role badge */}
+        <div className="flex items-center gap-3 mb-5">
+          <h2 className="text-xl font-bold text-gray-800">Helpdesk</h2>
+          {isManager ? (
+            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">Manager View</span>
+          ) : (
+            <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-medium">My Tickets</span>
+          )}
+        </div>
+
         {/* Stats */}
         <div className="grid grid-cols-3 gap-4 mb-6">
           <div className="bg-white rounded-xl border p-4 text-center shadow-sm">
@@ -131,141 +175,247 @@ export default function HelpdeskPage() {
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-3 items-center justify-between mb-4">
-          <div className="flex gap-2 flex-wrap">
-            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-              className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="">All Statuses</option>
-              {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <select value={filterPriority} onChange={e => setFilterPriority(e.target.value)}
-              className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="">All Priorities</option>
-              {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </div>
-          <button onClick={startNew} className="bg-blue-700 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium">
-            + New Ticket
-          </button>
-        </div>
-
-        {/* Form */}
-        {editingId !== null && (
-          <div className="bg-white rounded-xl shadow-sm border p-5 mb-5">
-            <h3 className="font-semibold text-gray-800 mb-4">{editingId === "new" ? "New Ticket" : "Edit Ticket"}</h3>
-            <form onSubmit={handleSave} className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Title *</label>
-                <input type="text" value={form.title} onChange={set("title")} required placeholder="Brief description of the issue"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        {/* ── MANAGER VIEW ── */}
+        {isManager && (
+          <>
+            <div className="flex flex-wrap gap-3 items-center justify-between mb-4">
+              <div className="flex gap-2 flex-wrap">
+                <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+                  className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="">All Statuses</option>
+                  {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <select value={filterPriority} onChange={e => setFilterPriority(e.target.value)}
+                  className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="">All Priorities</option>
+                  {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Category</label>
-                  <select value={form.category ?? ""} onChange={set("category")}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="">— Select —</option>
-                    {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Priority</label>
-                  <select value={form.priority} onChange={set("priority")}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
-                  <select value={form.status} onChange={set("status")}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Assigned To</label>
-                  <input type="text" value={form.assigned_to ?? ""} onChange={set("assigned_to")} placeholder="e.g. IT Support"
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
-                <textarea value={form.description ?? ""} onChange={set("description")} rows={3} placeholder="Full details of the issue…"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              {(form.status === "Resolved" || form.status === "Closed") && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Resolution Notes</label>
-                  <textarea value={form.resolution ?? ""} onChange={set("resolution")} rows={2} placeholder="How was this resolved?"
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-              )}
-              {error && <div className="text-red-600 text-sm bg-red-50 border border-red-200 px-3 py-2 rounded-lg">{error}</div>}
-              <div className="flex gap-2">
-                <button type="submit" disabled={saving} className="bg-blue-700 hover:bg-blue-800 text-white px-5 py-2 rounded-lg text-sm font-medium disabled:opacity-50">
-                  {saving ? "Saving…" : "Save Ticket"}
-                </button>
-                <button type="button" onClick={() => setEditingId(null)} className="text-gray-500 hover:text-gray-700 px-4 py-2 text-sm border border-gray-200 rounded-lg">Cancel</button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {/* Ticket list */}
-        <div className="space-y-2">
-          {loading ? (
-            <div className="bg-white rounded-xl border p-8 text-center text-gray-400">Loading…</div>
-          ) : filtered.length === 0 ? (
-            <div className="bg-white rounded-xl border p-8 text-center text-gray-400">
-              {tickets.length === 0 ? "No tickets yet. Click + New Ticket to log an issue." : "No tickets match your filters."}
+              <button onClick={startNew} className="bg-blue-700 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                + New Ticket
+              </button>
             </div>
-          ) : filtered.map(t => (
-            <div key={t.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
-              {/* Ticket header row */}
-              <div className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50"
-                onClick={() => setExpandedId(expandedId === t.id ? null : t.id)}>
-                <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0 ${PRIORITY_STYLES[t.priority] ?? "bg-gray-100 text-gray-600"}`}>{t.priority}</span>
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-gray-800 truncate">{t.title}</div>
-                  <div className="text-xs text-gray-400 mt-0.5">
-                    {t.category && <span className="mr-2">{t.category}</span>}
-                    Opened {new Date(t.created_at).toLocaleDateString("en-GB")} by {t.created_by}
-                  </div>
-                </div>
-                <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0 ${STATUS_STYLES[t.status] ?? "bg-gray-100 text-gray-500"}`}>{t.status}</span>
-                <span className="text-gray-400 text-xs">{expandedId === t.id ? "▲" : "▼"}</span>
-              </div>
 
-              {/* Expanded detail */}
-              {expandedId === t.id && (
-                <div className="border-t px-4 py-4 bg-gray-50 space-y-3">
-                  {t.description && <p className="text-sm text-gray-700 whitespace-pre-wrap">{t.description}</p>}
-                  {t.assigned_to && <p className="text-xs text-gray-500">Assigned to: <span className="font-medium text-gray-700">{t.assigned_to}</span></p>}
-                  {t.resolution && (
-                    <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                      <div className="text-xs font-semibold text-green-700 mb-1">Resolution</div>
-                      <p className="text-sm text-gray-700 whitespace-pre-wrap">{t.resolution}</p>
+            {/* Manager form */}
+            {editingId !== null && (
+              <div className="bg-white rounded-xl shadow-sm border p-5 mb-5">
+                <h3 className="font-semibold text-gray-800 mb-4">{editingId === "new" ? "New Ticket" : "Edit Ticket"}</h3>
+                <form onSubmit={handleManagerSave} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Title *</label>
+                    <input type="text" value={managerForm.title} onChange={mSet("title")} required placeholder="Brief description of the issue"
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Category</label>
+                      <select value={managerForm.category} onChange={mSet("category")}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">— Select —</option>
+                        {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Priority</label>
+                      <select value={managerForm.priority} onChange={mSet("priority")}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
+                      <select value={managerForm.status} onChange={mSet("status")}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Assigned To</label>
+                      <input type="text" value={managerForm.assigned_to} onChange={mSet("assigned_to")} placeholder="e.g. IT Support"
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
+                    <textarea value={managerForm.description} onChange={mSet("description")} rows={3} placeholder="Full details of the issue…"
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  {(managerForm.status === "Resolved" || managerForm.status === "Closed") && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Resolution Notes</label>
+                      <textarea value={managerForm.resolution} onChange={mSet("resolution")} rows={2} placeholder="How was this resolved?"
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     </div>
                   )}
-                  <div className="text-xs text-gray-400">Updated {new Date(t.updated_at).toLocaleDateString("en-GB")}</div>
-
-                  {/* Quick status change */}
-                  <div className="flex flex-wrap gap-2 pt-1 border-t">
-                    <span className="text-xs text-gray-500 self-center">Move to:</span>
-                    {STATUSES.filter(s => s !== t.status).map(s => (
-                      <button key={s} onClick={() => handleStatusChange(t, s)}
-                        className={`text-xs px-3 py-1 rounded-full border font-medium transition-colors ${STATUS_STYLES[s] ?? "bg-gray-100 text-gray-600"} hover:opacity-80`}>{s}</button>
-                    ))}
-                    <div className="flex-1" />
-                    <button onClick={() => startEdit(t)} className="text-blue-500 hover:text-blue-700 text-xs font-medium">Edit</button>
-                    <button onClick={() => handleDelete(t.id, t.title)} className="text-red-400 hover:text-red-600 text-xs">Delete</button>
+                  {error && <div className="text-red-600 text-sm bg-red-50 border border-red-200 px-3 py-2 rounded-lg">{error}</div>}
+                  <div className="flex gap-2">
+                    <button type="submit" disabled={saving} className="bg-blue-700 hover:bg-blue-800 text-white px-5 py-2 rounded-lg text-sm font-medium disabled:opacity-50">
+                      {saving ? "Saving…" : "Save Ticket"}
+                    </button>
+                    <button type="button" onClick={cancelForm} className="text-gray-500 hover:text-gray-700 px-4 py-2 text-sm border border-gray-200 rounded-lg">Cancel</button>
                   </div>
+                </form>
+              </div>
+            )}
+
+            {/* Manager ticket list */}
+            <div className="space-y-2">
+              {loading ? (
+                <div className="bg-white rounded-xl border p-8 text-center text-gray-400">Loading…</div>
+              ) : filtered.length === 0 ? (
+                <div className="bg-white rounded-xl border p-8 text-center text-gray-400">
+                  {tickets.length === 0 ? "No tickets yet." : "No tickets match your filters."}
                 </div>
-              )}
+              ) : filtered.map(t => (
+                <div key={t.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                  <div className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50"
+                    onClick={() => setExpandedId(expandedId === t.id ? null : t.id)}>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0 ${PRIORITY_STYLES[t.priority] ?? "bg-gray-100"}`}>{t.priority}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-gray-800 truncate">{t.title}</div>
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        {t.category && <span className="mr-2">{t.category}</span>}
+                        {t.created_by} · {new Date(t.created_at).toLocaleDateString("en-GB")}
+                      </div>
+                    </div>
+                    {t.assigned_to && <span className="text-xs text-gray-400 hidden sm:block">{t.assigned_to}</span>}
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0 ${STATUS_STYLES[t.status] ?? "bg-gray-100"}`}>{t.status}</span>
+                    <span className="text-gray-400 text-xs">{expandedId === t.id ? "▲" : "▼"}</span>
+                  </div>
+                  {expandedId === t.id && (
+                    <div className="border-t px-4 py-4 bg-gray-50 space-y-3">
+                      {t.description && <p className="text-sm text-gray-700 whitespace-pre-wrap">{t.description}</p>}
+                      {t.assigned_to && <p className="text-xs text-gray-500">Assigned to: <span className="font-medium text-gray-700">{t.assigned_to}</span></p>}
+                      {t.resolution && (
+                        <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                          <div className="text-xs font-semibold text-green-700 mb-1">Resolution</div>
+                          <p className="text-sm text-gray-700 whitespace-pre-wrap">{t.resolution}</p>
+                        </div>
+                      )}
+                      <div className="text-xs text-gray-400">Updated {new Date(t.updated_at).toLocaleDateString("en-GB")}</div>
+                      <div className="flex flex-wrap gap-2 pt-1 border-t">
+                        <span className="text-xs text-gray-500 self-center">Move to:</span>
+                        {STATUSES.filter(s => s !== t.status).map(s => (
+                          <button key={s} onClick={() => handleStatusChange(t, s)}
+                            className={`text-xs px-3 py-1 rounded-full border font-medium transition-colors ${STATUS_STYLES[s] ?? "bg-gray-100"} hover:opacity-80`}>{s}</button>
+                        ))}
+                        <div className="flex-1" />
+                        <button onClick={() => startEdit(t)} className="text-blue-500 hover:text-blue-700 text-xs font-medium">Edit</button>
+                        <button onClick={() => handleDelete(t.id, t.title)} className="text-red-400 hover:text-red-600 text-xs">Delete</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        {filtered.length > 0 && <p className="text-xs text-gray-400 text-right mt-2">{filtered.length} ticket{filtered.length !== 1 ? "s" : ""}</p>}
+            {filtered.length > 0 && <p className="text-xs text-gray-400 text-right mt-2">{filtered.length} ticket{filtered.length !== 1 ? "s" : ""}</p>}
+          </>
+        )}
+
+        {/* ── USER VIEW ── */}
+        {!isManager && me !== null && (
+          <>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm text-gray-500">Submit IT support requests. Your tickets are visible to the IT team.</p>
+              <button onClick={() => { setShowForm(true); setError(""); setUserForm({ ...USER_EMPTY }); }}
+                className="bg-blue-700 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                + New Request
+              </button>
+            </div>
+
+            {/* User submission form */}
+            {showForm && (
+              <div className="bg-white rounded-xl shadow-sm border p-5 mb-5">
+                <h3 className="font-semibold text-gray-800 mb-4">New IT Support Request</h3>
+                <form onSubmit={handleUserSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Issue Summary *</label>
+                    <input type="text" value={userForm.title} onChange={uSet("title")} required placeholder="e.g. Projector not working in Room 5"
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Category</label>
+                      <select value={userForm.category} onChange={uSet("category")}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">— Select —</option>
+                        {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Priority</label>
+                      <select value={userForm.priority} onChange={uSet("priority")}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Details</label>
+                    <textarea value={userForm.description} onChange={uSet("description")} rows={3}
+                      placeholder="Please describe the issue in detail — what happened, what you were doing, any error messages…"
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  {error && <div className="text-red-600 text-sm bg-red-50 border border-red-200 px-3 py-2 rounded-lg">{error}</div>}
+                  <div className="flex gap-2">
+                    <button type="submit" disabled={saving} className="bg-blue-700 hover:bg-blue-800 text-white px-5 py-2 rounded-lg text-sm font-medium disabled:opacity-50">
+                      {saving ? "Submitting…" : "Submit Request"}
+                    </button>
+                    <button type="button" onClick={cancelForm} className="text-gray-500 hover:text-gray-700 px-4 py-2 text-sm border border-gray-200 rounded-lg">Cancel</button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {/* User ticket list — read-only status */}
+            <div className="space-y-2">
+              {loading ? (
+                <div className="bg-white rounded-xl border p-8 text-center text-gray-400">Loading…</div>
+              ) : tickets.length === 0 ? (
+                <div className="bg-white rounded-xl border p-12 text-center">
+                  <div className="text-gray-300 text-4xl mb-3">🎫</div>
+                  <p className="text-gray-500 font-medium">No requests yet</p>
+                  <p className="text-gray-400 text-sm mt-1">Click + New Request to report an issue to the IT team.</p>
+                </div>
+              ) : tickets.map(t => (
+                <div key={t.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                  <div className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50"
+                    onClick={() => setExpandedId(expandedId === t.id ? null : t.id)}>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0 ${PRIORITY_STYLES[t.priority] ?? "bg-gray-100"}`}>{t.priority}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-gray-800 truncate">{t.title}</div>
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        {t.category && <span className="mr-2">{t.category}</span>}
+                        Submitted {new Date(t.created_at).toLocaleDateString("en-GB")}
+                      </div>
+                    </div>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0 ${STATUS_STYLES[t.status] ?? "bg-gray-100"}`}>{t.status}</span>
+                    <span className="text-gray-400 text-xs">{expandedId === t.id ? "▲" : "▼"}</span>
+                  </div>
+                  {expandedId === t.id && (
+                    <div className="border-t px-4 py-4 bg-gray-50 space-y-3">
+                      {t.description && <p className="text-sm text-gray-700 whitespace-pre-wrap">{t.description}</p>}
+                      {t.assigned_to && (
+                        <p className="text-xs text-gray-500">Being handled by: <span className="font-medium text-gray-700">{t.assigned_to}</span></p>
+                      )}
+                      {t.resolution && (
+                        <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                          <div className="text-xs font-semibold text-green-700 mb-1">Resolution</div>
+                          <p className="text-sm text-gray-700 whitespace-pre-wrap">{t.resolution}</p>
+                        </div>
+                      )}
+                      <div className="text-xs text-gray-400">Last updated {new Date(t.updated_at).toLocaleDateString("en-GB")}</div>
+                      <div className="flex justify-end pt-1 border-t">
+                        <button onClick={() => handleDelete(t.id, t.title)} className="text-red-400 hover:text-red-600 text-xs">Delete</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            {tickets.length > 0 && <p className="text-xs text-gray-400 text-right mt-2">{tickets.length} request{tickets.length !== 1 ? "s" : ""}</p>}
+          </>
+        )}
       </div>
     </main>
   );

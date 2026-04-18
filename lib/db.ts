@@ -79,6 +79,7 @@ function initSchema(db: Database.Database) {
     `ALTER TABLE schools ADD COLUMN msp_phone TEXT;`,
     `ALTER TABLE schools ADD COLUMN msp_contract_expiry TEXT;`,
     `ALTER TABLE users ADD COLUMN can_helpdesk INTEGER NOT NULL DEFAULT 0;`,
+    `ALTER TABLE equipment_loans ADD COLUMN pool_item_id TEXT REFERENCES loan_pool(id);`,
   ];
   for (const sql of migrations) {
     try { db.exec(sql); } catch { /* already exists */ }
@@ -152,6 +153,19 @@ function initSchema(db: Database.Database) {
       assigned_to TEXT,
       location TEXT,
       status TEXT NOT NULL DEFAULT 'active',
+      notes TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS loan_pool (
+      id TEXT PRIMARY KEY,
+      school_id TEXT NOT NULL REFERENCES schools(id),
+      name TEXT NOT NULL,
+      device_type TEXT,
+      asset_tag TEXT,
+      serial_number TEXT,
+      make TEXT,
+      model TEXT,
       notes TEXT,
       created_at TEXT NOT NULL
     );

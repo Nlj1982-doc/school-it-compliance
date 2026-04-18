@@ -34,7 +34,7 @@ export default function UserNav() {
     { label: "Assets", href: "/assets" },
     { label: "Network", href: "/network" },
     { label: "Loans", href: "/loans" },
-    ...(user?.canHelpdesk || user?.role === "admin" ? [{ label: "Helpdesk", href: "/helpdesk" }] : []),
+    { label: "Helpdesk", href: "/helpdesk" },
   ];
 
   const isActive = (href: string) => pathname === href;

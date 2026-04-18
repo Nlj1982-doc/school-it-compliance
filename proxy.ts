@@ -33,13 +33,6 @@ export async function proxy(req: NextRequest) {
     }
   }
 
-  // Helpdesk — requires explicit permission (or admin)
-  if (pathname.startsWith("/helpdesk") || pathname.startsWith("/api/my/helpdesk")) {
-    if (session.role !== "admin" && !session.canHelpdesk) {
-      return NextResponse.redirect(new URL("/", req.url));
-    }
-  }
-
   return res;
 }
 

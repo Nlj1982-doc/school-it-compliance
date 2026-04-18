@@ -27,10 +27,10 @@ export async function POST(req: NextRequest) {
   if (!body.date_out) return NextResponse.json({ error: "Loan date is required" }, { status: 400 });
   const id = randomUUID();
   getDb().prepare(`
-    INSERT INTO equipment_loans (id, school_id, borrower_name, borrower_type, borrower_group, equipment, asset_tag, date_out, date_due, date_returned, condition_out, condition_in, authorised_by, notes, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO equipment_loans (id, school_id, pool_item_id, borrower_name, borrower_type, borrower_group, equipment, asset_tag, date_out, date_due, date_returned, condition_out, condition_in, authorised_by, notes, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    id, schoolId,
+    id, schoolId, body.pool_item_id ?? null,
     body.borrower_name.trim(), body.borrower_type?.trim() ?? "Student",
     body.borrower_group?.trim() ?? null, body.equipment.trim(),
     body.asset_tag?.trim() ?? null, body.date_out,
