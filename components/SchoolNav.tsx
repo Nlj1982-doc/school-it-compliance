@@ -26,7 +26,10 @@ export default function SchoolNav({ schoolId, schoolName }: Props) {
         <button onClick={() => router.push("/admin")} className="text-blue-200 text-sm hover:text-white mb-2 block">
           ← Back to Admin Portal
         </button>
-        <h1 className="font-bold text-xl mb-3">{schoolName || "School"}</h1>
+        <div className="flex items-baseline gap-2 mb-3">
+          <h1 className="font-bold text-xl">{schoolName || "School"}</h1>
+          <span className="text-blue-300 text-xs font-medium">School IT Manager</span>
+        </div>
         <div className="flex gap-1">
           {tabs.map((t) => (
             <button

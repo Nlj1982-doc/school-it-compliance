@@ -28,8 +28,9 @@ export default function UserNav() {
 
   const tabs = [
     { label: "Dashboard", href: "/" },
+    { label: "Compliance", href: "/compliance" },
     { label: "Contracts", href: "/contracts" },
-    { label: "Asset Log", href: "/assets" },
+    { label: "Assets", href: "/assets" },
     { label: "Network", href: "/network" },
   ];
 
@@ -42,7 +43,7 @@ export default function UserNav() {
         <div className="flex items-center gap-3">
           <span className="text-2xl">🏫</span>
           <div>
-            <h1 className="font-bold text-lg leading-tight">UK School IT Compliance</h1>
+            <h1 className="font-bold text-lg leading-tight">School IT Manager</h1>
             {user?.schoolName && (
               <p className="text-blue-200 text-sm leading-tight">{user.schoolName}</p>
             )}

@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
-import NavBar from "@/components/NavBar";
 import {
   frameworks,
   getTotalQuestions,
@@ -77,10 +76,13 @@ export default function AssessPage() {
       <div className="bg-blue-800 text-white px-4 py-4 sticky top-0 z-10 shadow-md">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div>
-            <button onClick={() => router.push("/")} className="text-blue-200 text-sm hover:text-white mb-1">
-              ← Back to home
+            <button onClick={() => router.push("/compliance")} className="text-blue-200 text-sm hover:text-white mb-1">
+              ← Compliance
             </button>
-            <h1 className="font-bold text-lg">{schoolName}</h1>
+            <div className="flex items-baseline gap-2">
+              <h1 className="font-bold text-lg">{schoolName}</h1>
+              <span className="text-blue-300 text-xs">School IT Manager</span>
+            </div>
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
@@ -93,7 +95,6 @@ export default function AssessPage() {
             >
               View Report
             </button>
-            <NavBar />
           </div>
         </div>
         {/* Progress bar */}

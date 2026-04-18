@@ -2,154 +2,284 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { frameworks, getTotalQuestions, getFrameworkScore } from "@/lib/frameworks";
-import type { QuestionStatus } from "@/lib/frameworks";
 import UserNav from "@/components/UserNav";
+import { frameworks, getFrameworkScore } from "@/lib/frameworks";
+import type { QuestionStatus } from "@/lib/frameworks";
 
-interface Assessment {
-  id: string;
-  school_id: string | null;
-  school_name: string;
-  updated_at: string;
-  answers: string;
+interface Assessment { id: string; updated_at: string; answers: string; }
+interface Asset { warranty_end_date: string | null; status: string; }
+interface NetworkDevice { warranty_end_date: string | null; support_expiry: string | null; status: string; }
+interface Contract { end_date: string | null; name: string; }
+
+function daysUntil(d: string | null) {
+  if (!d) return null;
+  return Math.ceil((new Date(d).getTime() - Date.now()) / 86400000);
 }
 
-export default function HomePage() {
+function getOverallRag(answers: Record<string, QuestionStatus>) {
+  const scores = frameworks.map(f => getFrameworkScore(f.id, answers)).filter(Boolean);
+  if (!scores.length) return null;
+  const avg = scores.reduce((a, s) => a + (s?.percentage ?? 0), 0) / scores.length;
+  return avg >= 75 ? "green" : avg >= 50 ? "amber" : "red";
+}
+
+function RagBadge({ rag }: { rag: string | null }) {
+  if (!rag) return <span className="text-xs text-gray-400">Not started</span>;
+  const styles = { green: "bg-green-100 text-green-700", amber: "bg-yellow-100 text-yellow-700", red: "bg-red-100 text-red-700" };
+  const labels = { green: "Compliant", amber: "Needs Work", red: "At Risk" };
+  return <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${styles[rag as keyof typeof styles]}`}>{labels[rag as keyof typeof labels]}</span>;
+}
+
+export default function DashboardPage() {
   const router = useRouter();
-  const [assessments, setAssessments] = useState<Assessment[]>([]);
-  const [fetching, setFetching] = useState(true);
+  const [assessment, setAssessment] = useState<Assessment | null>(null);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [network, setNetwork] = useState<NetworkDevice[]>([]);
+  const [contracts, setContracts] = useState<Contract[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/assessments")
-      .then(r => r.json())
-      .then(a => {
-        setAssessments(Array.isArray(a) ? a : []);
-        setFetching(false);
-      });
+    Promise.all([
+      fetch("/api/assessments").then(r => r.json()),
+      fetch("/api/my/assets").then(r => r.json()),
+      fetch("/api/my/network").then(r => r.json()),
+      fetch("/api/my/contracts").then(r => r.json()),
+    ]).then(([assess, ast, net, con]) => {
+      setAssessment(Array.isArray(assess) ? (assess[0] ?? null) : null);
+      setAssets(Array.isArray(ast) ? ast : []);
+      setNetwork(Array.isArray(net) ? net : []);
+      setContracts(Array.isArray(con) ? con : []);
+      setLoading(false);
+    });
   }, []);
 
-  function getOverallRag(answers: Record<string, QuestionStatus>) {
-    const scores = frameworks.map((f) => getFrameworkScore(f.id, answers));
-    const valid = scores.filter(Boolean);
-    if (!valid.length) return null;
-    const avg = valid.reduce((a, s) => a + (s?.percentage ?? 0), 0) / valid.length;
-    return avg >= 75 ? "green" : avg >= 50 ? "amber" : "red";
-  }
+  // Computed stats
+  const answers = assessment ? JSON.parse(assessment.answers) as Record<string, QuestionStatus> : {};
+  const rag = assessment ? getOverallRag(answers) : null;
+  const answeredCount = Object.values(answers).filter(v => v !== null).length;
+  const totalQ = frameworks.flatMap(f => f.sections.flatMap(s => s.questions)).length;
+  const compliancePct = totalQ ? Math.round((answeredCount / totalQ) * 100) : 0;
 
-  const totalQuestions = getTotalQuestions();
+  const assetWarrantyExpiring = assets.filter(a => { const d = daysUntil(a.warranty_end_date); return d !== null && d >= 0 && d <= 30; });
+  const netWarrantyExpiring   = network.filter(n => { const d = daysUntil(n.warranty_end_date); return d !== null && d >= 0 && d <= 30; });
+  const netSupportExpiring    = network.filter(n => { const d = daysUntil(n.support_expiry);    return d !== null && d >= 0 && d <= 30; });
+  const contractsExpiring     = contracts.filter(c => { const d = daysUntil(c.end_date);        return d !== null && d >= 0 && d <= 30; });
+  const contractsExpired      = contracts.filter(c => { const d = daysUntil(c.end_date);        return d !== null && d < 0; });
 
-  // School users go straight to their assessment; this page is mainly a dashboard
-  const myAssessment = assessments[0] ?? null;
+  const totalAlerts = assetWarrantyExpiring.length + netWarrantyExpiring.length + netSupportExpiring.length + contractsExpiring.length + contractsExpired.length;
 
-  if (fetching) {
-    return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-400">Loading...</div>;
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <UserNav />
+        <div className="flex items-center justify-center h-64 text-gray-400">Loading…</div>
+      </div>
+    );
   }
 
   return (
     <main className="min-h-screen bg-gray-50">
       <UserNav />
 
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-4 mb-8">
-          <div className="bg-white rounded-lg p-4 text-center shadow-sm border">
-            <div className="text-2xl font-bold text-blue-800">{frameworks.length}</div>
-            <div className="text-sm text-gray-500">Frameworks Covered</div>
-          </div>
-          <div className="bg-white rounded-lg p-4 text-center shadow-sm border">
-            <div className="text-2xl font-bold text-blue-800">{totalQuestions}</div>
-            <div className="text-sm text-gray-500">Compliance Checks</div>
-          </div>
-          <div className="bg-white rounded-lg p-4 text-center shadow-sm border">
-            {myAssessment ? (() => {
-              const answers = JSON.parse(myAssessment.answers) as Record<string, QuestionStatus>;
-              const answered = Object.values(answers).filter(v => v !== null).length;
-              const pct = Math.round((answered / totalQuestions) * 100);
-              return <>
-                <div className="text-2xl font-bold text-blue-800">{pct}%</div>
-                <div className="text-sm text-gray-500">Assessment Complete</div>
-              </>;
-            })() : <>
-              <div className="text-2xl font-bold text-gray-400">0%</div>
-              <div className="text-sm text-gray-500">Assessment Complete</div>
-            </>}
+      <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
+
+        {/* Module cards */}
+        <div>
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Management Areas</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+
+            {/* Compliance */}
+            <div className="bg-white rounded-xl border shadow-sm p-5 flex flex-col">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-2xl">📋</span>
+                <span className="font-semibold text-gray-800">Compliance</span>
+              </div>
+              {assessment ? (
+                <>
+                  <div className="mb-1"><RagBadge rag={rag} /></div>
+                  <div className="text-xs text-gray-500 mb-1">{compliancePct}% complete · {answeredCount}/{totalQ} questions</div>
+                  <div className="text-xs text-gray-400 mb-3">Updated {new Date(assessment.updated_at).toLocaleDateString("en-GB")}</div>
+                </>
+              ) : (
+                <p className="text-xs text-gray-400 mb-3 flex-1">No assessment started yet.</p>
+              )}
+              <button onClick={() => router.push("/compliance")}
+                className="mt-auto w-full text-center bg-blue-700 hover:bg-blue-800 text-white text-sm font-medium py-1.5 rounded-lg transition-colors">
+                {assessment && answeredCount > 0 ? "View Compliance" : "Start Assessment"}
+              </button>
+            </div>
+
+            {/* Assets */}
+            <div className="bg-white rounded-xl border shadow-sm p-5 flex flex-col">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-2xl">💻</span>
+                <span className="font-semibold text-gray-800">Asset Log</span>
+              </div>
+              <div className="space-y-1 mb-3 flex-1">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Total devices</span>
+                  <span className="font-semibold text-gray-800">{assets.length}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Active</span>
+                  <span className="font-semibold text-green-700">{assets.filter(a => a.status === "Active").length}</span>
+                </div>
+                {assetWarrantyExpiring.length > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Warranty expiring</span>
+                    <span className="font-semibold text-red-600">{assetWarrantyExpiring.length}</span>
+                  </div>
+                )}
+              </div>
+              <button onClick={() => router.push("/assets")}
+                className="mt-auto w-full text-center border border-blue-600 text-blue-700 hover:bg-blue-50 text-sm font-medium py-1.5 rounded-lg transition-colors">
+                View Assets
+              </button>
+            </div>
+
+            {/* Network */}
+            <div className="bg-white rounded-xl border shadow-sm p-5 flex flex-col">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-2xl">🌐</span>
+                <span className="font-semibold text-gray-800">Network</span>
+              </div>
+              <div className="space-y-1 mb-3 flex-1">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Total devices</span>
+                  <span className="font-semibold text-gray-800">{network.length}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Active</span>
+                  <span className="font-semibold text-green-700">{network.filter(n => n.status === "Active").length}</span>
+                </div>
+                {(netWarrantyExpiring.length + netSupportExpiring.length) > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Expiring soon</span>
+                    <span className="font-semibold text-red-600">{netWarrantyExpiring.length + netSupportExpiring.length}</span>
+                  </div>
+                )}
+              </div>
+              <button onClick={() => router.push("/network")}
+                className="mt-auto w-full text-center border border-blue-600 text-blue-700 hover:bg-blue-50 text-sm font-medium py-1.5 rounded-lg transition-colors">
+                View Network
+              </button>
+            </div>
+
+            {/* Contracts */}
+            <div className="bg-white rounded-xl border shadow-sm p-5 flex flex-col">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-2xl">📄</span>
+                <span className="font-semibold text-gray-800">Contracts</span>
+              </div>
+              <div className="space-y-1 mb-3 flex-1">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Total contracts</span>
+                  <span className="font-semibold text-gray-800">{contracts.length}</span>
+                </div>
+                {contractsExpiring.length > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Expiring soon</span>
+                    <span className="font-semibold text-red-600">{contractsExpiring.length}</span>
+                  </div>
+                )}
+                {contractsExpired.length > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Expired</span>
+                    <span className="font-semibold text-red-700">{contractsExpired.length}</span>
+                  </div>
+                )}
+              </div>
+              <button onClick={() => router.push("/contracts")}
+                className="mt-auto w-full text-center border border-blue-600 text-blue-700 hover:bg-blue-50 text-sm font-medium py-1.5 rounded-lg transition-colors">
+                View Contracts
+              </button>
+            </div>
+
           </div>
         </div>
 
-        {/* Assessment card */}
-        {myAssessment ? (() => {
-          const answers = JSON.parse(myAssessment.answers) as Record<string, QuestionStatus>;
-          const rag = getOverallRag(answers);
-          const answered = Object.values(answers).filter(v => v !== null).length;
-          return (
-            <div className="bg-white rounded-xl shadow-sm border p-6 mb-8">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-gray-800">Your Compliance Assessment</h2>
-                {rag && (
-                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${rag === "green" ? "bg-green-100 text-green-800" : rag === "amber" ? "bg-yellow-100 text-yellow-800" : "bg-red-100 text-red-800"}`}>
-                    {rag === "green" ? "Compliant" : rag === "amber" ? "Needs Work" : "At Risk"}
-                  </span>
-                )}
-              </div>
-              <p className="text-sm text-gray-500 mb-4">{answered} of {totalQuestions} questions answered · Last updated {new Date(myAssessment.updated_at).toLocaleDateString("en-GB")}</p>
-              <div className="h-2 bg-gray-100 rounded-full mb-5">
-                <div className="h-2 bg-blue-600 rounded-full" style={{ width: `${Math.round((answered / totalQuestions) * 100)}%` }} />
-              </div>
-              {/* Per-framework scores */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">
-                {frameworks.map(f => {
-                  const s = getFrameworkScore(f.id, answers);
-                  return (
-                    <div key={f.id} className="bg-gray-50 rounded-lg p-3">
-                      <div className="text-xs text-gray-500 mb-1">{f.shortTitle}</div>
-                      {s && s.answered > 0 ? (
-                        <div className={`text-sm font-bold ${s.rag === "green" ? "text-green-700" : s.rag === "amber" ? "text-yellow-600" : "text-red-600"}`}>
-                          {s.percentage}%
-                        </div>
-                      ) : <div className="text-sm text-gray-300">Not started</div>}
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="flex gap-3">
-                <button onClick={() => router.push(`/assess/${myAssessment.id}`)}
-                  className="bg-blue-700 hover:bg-blue-800 text-white px-5 py-2 rounded-lg font-medium text-sm transition-colors">
-                  {answered === 0 ? "Start Assessment" : "Continue Assessment"}
-                </button>
-                {answered > 0 && (
-                  <button onClick={() => router.push(`/report/${myAssessment.id}`)}
-                    className="border border-blue-700 text-blue-700 hover:bg-blue-50 px-5 py-2 rounded-lg font-medium text-sm transition-colors">
-                    View Report
-                  </button>
-                )}
-              </div>
+        {/* Alerts panel */}
+        {totalAlerts > 0 ? (
+          <div className="bg-white rounded-xl border border-yellow-200 shadow-sm p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-lg">⚠️</span>
+              <h2 className="font-semibold text-gray-800">
+                {totalAlerts} item{totalAlerts !== 1 ? "s" : ""} need{totalAlerts === 1 ? "s" : ""} attention
+              </h2>
+              <span className="text-xs text-gray-400">(due within 30 days or already expired)</span>
             </div>
-          );
-        })() : (
-          <div className="bg-white rounded-xl shadow-sm border p-8 text-center mb-8">
-            <div className="text-4xl mb-3">📋</div>
-            <h2 className="text-lg font-semibold text-gray-700 mb-2">No assessment yet</h2>
-            <p className="text-gray-500 text-sm">Your school hasn&apos;t been set up yet. Contact your administrator.</p>
+            <div className="space-y-2">
+              {contractsExpired.length > 0 && (
+                <div className="flex items-center justify-between py-2 px-3 bg-red-50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-red-700 bg-red-100 px-2 py-0.5 rounded-full">Contracts</span>
+                    <span className="text-sm text-gray-700">{contractsExpired.length} contract{contractsExpired.length !== 1 ? "s" : ""} have expired</span>
+                  </div>
+                  <button onClick={() => router.push("/contracts")} className="text-xs text-blue-600 hover:underline">Review →</button>
+                </div>
+              )}
+              {contractsExpiring.length > 0 && (
+                <div className="flex items-center justify-between py-2 px-3 bg-yellow-50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full">Contracts</span>
+                    <span className="text-sm text-gray-700">
+                      {contractsExpiring.length} expiring within 30 days
+                      {contractsExpiring.length <= 3 ? `: ${contractsExpiring.map(c => c.name).join(", ")}` : ""}
+                    </span>
+                  </div>
+                  <button onClick={() => router.push("/contracts")} className="text-xs text-blue-600 hover:underline">Review →</button>
+                </div>
+              )}
+              {assetWarrantyExpiring.length > 0 && (
+                <div className="flex items-center justify-between py-2 px-3 bg-yellow-50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full">Assets</span>
+                    <span className="text-sm text-gray-700">{assetWarrantyExpiring.length} device warrant{assetWarrantyExpiring.length !== 1 ? "ies" : "y"} expiring within 30 days</span>
+                  </div>
+                  <button onClick={() => router.push("/assets")} className="text-xs text-blue-600 hover:underline">Review →</button>
+                </div>
+              )}
+              {(netWarrantyExpiring.length + netSupportExpiring.length) > 0 && (
+                <div className="flex items-center justify-between py-2 px-3 bg-yellow-50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full">Network</span>
+                    <span className="text-sm text-gray-700">
+                      {netWarrantyExpiring.length + netSupportExpiring.length} warranty / support item{(netWarrantyExpiring.length + netSupportExpiring.length) !== 1 ? "s" : ""} expiring within 30 days
+                    </span>
+                  </div>
+                  <button onClick={() => router.push("/network")} className="text-xs text-blue-600 hover:underline">Review →</button>
+                </div>
+              )}
+            </div>
           </div>
+        ) : (
+          assets.length + network.length + contracts.length > 0 && (
+            <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3">
+              <span className="text-xl">✅</span>
+              <span className="text-sm text-green-800 font-medium">No contracts, warranties or support items due to expire within 30 days.</span>
+            </div>
+          )
         )}
 
-        {/* Frameworks overview */}
-        <div className="bg-white rounded-xl shadow-sm border p-6">
-          <h2 className="text-lg font-semibold text-gray-800 mb-4">Frameworks Covered</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {frameworks.map((f) => (
-              <div key={f.id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
-                <span className="text-lg mt-0.5">
-                  {f.colour === "blue" ? "🔵" : f.colour === "purple" ? "🟣" : f.colour === "green" ? "🟢" : f.colour === "orange" ? "🟠" : f.colour === "red" ? "🔴" : "🟡"}
-                </span>
-                <div>
-                  <div className="font-medium text-gray-800 text-sm">{f.shortTitle}</div>
-                  <div className="text-xs text-gray-500">{f.description.slice(0, 80)}...</div>
-                </div>
-              </div>
+        {/* Quick links */}
+        <div>
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Quick Links</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: "Run Compliance Assessment", icon: "📋", href: assessment ? `/assess/${assessment.id}` : "/compliance" },
+              { label: "Add Asset", icon: "💻", href: "/assets" },
+              { label: "Add Network Device", icon: "🌐", href: "/network" },
+              { label: "Add Contract", icon: "📄", href: "/contracts" },
+            ].map(l => (
+              <button key={l.href} onClick={() => router.push(l.href)}
+                className="bg-white border rounded-xl p-4 text-left hover:bg-gray-50 transition-colors shadow-sm">
+                <div className="text-2xl mb-1">{l.icon}</div>
+                <div className="text-sm font-medium text-gray-700">{l.label}</div>
+              </button>
             ))}
           </div>
         </div>
+
       </div>
     </main>
   );

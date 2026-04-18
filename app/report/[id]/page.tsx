@@ -69,12 +69,15 @@ export default function ReportPage() {
       {/* Header */}
       <div className="bg-blue-800 text-white px-4 py-6 print:bg-blue-800">
         <div className="max-w-4xl mx-auto">
-          <button
-            onClick={() => router.push(`/assess/${id}`)}
-            className="text-blue-200 text-sm hover:text-white mb-2 print:hidden"
-          >
-            ← Back to assessment
-          </button>
+          <div className="flex items-center gap-3 mb-2 print:hidden">
+            <button onClick={() => router.push("/compliance")} className="text-blue-200 text-sm hover:text-white">
+              ← Compliance
+            </button>
+            <span className="text-blue-600">|</span>
+            <button onClick={() => router.push(`/assess/${id}`)} className="text-blue-200 text-sm hover:text-white">
+              Back to assessment
+            </button>
+          </div>
           <h1 className="text-2xl font-bold">IT Compliance Report</h1>
           <p className="text-blue-200">{schoolName} · {new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}</p>
         </div>
@@ -296,7 +299,7 @@ export default function ReportPage() {
         )}
 
         <div className="text-center text-xs text-gray-400 mt-8 print:block">
-          Generated on {new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })} · UK Primary School IT Compliance Checker
+          Generated on {new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })} · School IT Manager
         </div>
       </div>
     </main>
