@@ -229,6 +229,32 @@ function initSchema(db: Database.Database) {
       notes TEXT,
       created_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS backup_connections (
+      id TEXT PRIMARY KEY,
+      school_id TEXT NOT NULL REFERENCES schools(id),
+      provider TEXT NOT NULL,
+      label TEXT NOT NULL,
+      config TEXT NOT NULL,
+      last_polled TEXT,
+      last_error TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS backup_jobs (
+      id TEXT PRIMARY KEY,
+      school_id TEXT NOT NULL REFERENCES schools(id),
+      connection_id TEXT NOT NULL REFERENCES backup_connections(id),
+      job_name TEXT NOT NULL,
+      job_type TEXT,
+      status TEXT NOT NULL DEFAULT 'Unknown',
+      started_at TEXT,
+      ended_at TEXT,
+      size_gb REAL,
+      protected_items INTEGER,
+      error_message TEXT,
+      polled_at TEXT NOT NULL
+    );
   `);
 }
 
