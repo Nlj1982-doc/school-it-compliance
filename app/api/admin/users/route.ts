@@ -16,8 +16,10 @@ export async function GET() {
   }
   const db = getDb();
   const users = db.prepare(`
-    SELECT u.id, u.username, u.role, u.school_id, u.can_helpdesk, u.created_at,
-           s.name as school_name
+    SELECT u.id, u.username, u.role, u.school_id,
+           u.can_helpdesk, u.can_compliance, u.can_contracts,
+           u.can_assets, u.can_network, u.can_loans, u.can_directory,
+           u.created_at, s.name as school_name
     FROM users u
     LEFT JOIN schools s ON s.id = u.school_id
     ORDER BY u.created_at DESC
@@ -58,11 +60,14 @@ export async function PATCH(req: NextRequest) {
   if (!id) return NextResponse.json({ error: "User id required" }, { status: 400 });
   const db = getDb();
 
-  // Permission toggle
-  if (typeof body.can_helpdesk === "number") {
-    const result = db.prepare("UPDATE users SET can_helpdesk = ? WHERE id = ?").run(body.can_helpdesk, id);
-    if (result.changes === 0) return NextResponse.json({ error: "User not found" }, { status: 404 });
-    return NextResponse.json({ ok: true });
+  // Permission toggle — accept any of the known permission columns
+  const PERM_COLS = ["can_helpdesk", "can_compliance", "can_contracts", "can_assets", "can_network", "can_loans", "can_directory"] as const;
+  for (const col of PERM_COLS) {
+    if (typeof body[col] === "number") {
+      const result = db.prepare(`UPDATE users SET ${col} = ? WHERE id = ?`).run(body[col], id);
+      if (result.changes === 0) return NextResponse.json({ error: "User not found" }, { status: 404 });
+      return NextResponse.json({ ok: true });
+    }
   }
 
   // Password reset
