@@ -16,7 +16,7 @@ export async function GET() {
   }
   const db = getDb();
   const users = db.prepare(`
-    SELECT u.id, u.username, u.role, u.school_id, u.created_at,
+    SELECT u.id, u.username, u.role, u.school_id, u.can_helpdesk, u.created_at,
            s.name as school_name
     FROM users u
     LEFT JOIN schools s ON s.id = u.school_id
@@ -53,16 +53,26 @@ export async function PATCH(req: NextRequest) {
   if (!(await requireAdmin())) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const { id, password } = await req.json();
-  if (!id || !password || password.length < 6) {
+  const body = await req.json();
+  const { id } = body;
+  if (!id) return NextResponse.json({ error: "User id required" }, { status: 400 });
+  const db = getDb();
+
+  // Permission toggle
+  if (typeof body.can_helpdesk === "number") {
+    const result = db.prepare("UPDATE users SET can_helpdesk = ? WHERE id = ?").run(body.can_helpdesk, id);
+    if (result.changes === 0) return NextResponse.json({ error: "User not found" }, { status: 404 });
+    return NextResponse.json({ ok: true });
+  }
+
+  // Password reset
+  const { password } = body;
+  if (!password || password.length < 6) {
     return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 });
   }
-  const db = getDb();
   const hash = bcrypt.hashSync(password, 10);
   const result = db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hash, id);
-  if (result.changes === 0) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
-  }
+  if (result.changes === 0) return NextResponse.json({ error: "User not found" }, { status: 404 });
   return NextResponse.json({ ok: true });
 }
 

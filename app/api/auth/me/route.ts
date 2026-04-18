@@ -12,6 +12,7 @@ export async function GET() {
       username: session.username,
       role: session.role,
       schoolName: session.schoolName,
+      canHelpdesk: session.canHelpdesk ?? false,
     },
   });
 }

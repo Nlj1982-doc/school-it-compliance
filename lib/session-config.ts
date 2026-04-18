@@ -6,6 +6,7 @@ export interface SessionData {
   role: "admin" | "user";
   schoolId: string | null;
   schoolName: string | null;
+  canHelpdesk?: boolean;
 }
 
 export const SESSION_OPTIONS: SessionOptions = {

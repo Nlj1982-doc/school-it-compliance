@@ -29,6 +29,7 @@ interface User {
   role: string;
   school_id: string | null;
   school_name: string | null;
+  can_helpdesk: number;
   created_at: string;
 }
 
@@ -160,6 +161,15 @@ export default function AdminPage() {
       setResetState(s => s ? { ...s, saving: false, success: true } : s);
       setTimeout(() => setResetState(null), 1500);
     }
+  }
+
+  async function handleToggleHelpdesk(u: User) {
+    await fetch("/api/admin/users", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: u.id, can_helpdesk: u.can_helpdesk ? 0 : 1 }),
+    });
+    loadAll();
   }
 
   function getSchoolScore(schoolId: string) {
@@ -421,6 +431,7 @@ export default function AdminPage() {
                       <th className="px-5 py-3 font-medium">Username</th>
                       <th className="px-5 py-3 font-medium">Role</th>
                       <th className="px-5 py-3 font-medium">School</th>
+                      <th className="px-5 py-3 font-medium text-center">Helpdesk</th>
                       <th className="px-5 py-3 font-medium">Created</th>
                       <th className="px-5 py-3 font-medium"></th>
                     </tr>
@@ -435,6 +446,19 @@ export default function AdminPage() {
                           </span>
                         </td>
                         <td className="px-5 py-3 text-gray-500">{u.school_name ?? <span className="text-gray-300">—</span>}</td>
+                        <td className="px-5 py-3 text-center">
+                          {u.role === "admin" ? (
+                            <span className="text-xs text-gray-300">always</span>
+                          ) : (
+                            <button
+                              onClick={() => handleToggleHelpdesk(u)}
+                              title={u.can_helpdesk ? "Click to revoke helpdesk access" : "Click to grant helpdesk access"}
+                              className={`text-xs px-2 py-0.5 rounded-full font-medium transition-colors ${u.can_helpdesk ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-gray-100 text-gray-400 hover:bg-gray-200"}`}
+                            >
+                              {u.can_helpdesk ? "Enabled" : "Disabled"}
+                            </button>
+                          )}
+                        </td>
                         <td className="px-5 py-3 text-gray-400 text-xs">{new Date(u.created_at).toLocaleDateString("en-GB")}</td>
                         <td className="px-5 py-3 whitespace-nowrap">
                           <button

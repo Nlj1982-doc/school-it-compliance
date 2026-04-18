@@ -8,6 +8,7 @@ interface SessionUser {
   username: string;
   role: string;
   schoolName: string | null;
+  canHelpdesk?: boolean;
 }
 
 export default function UserNav() {
@@ -32,6 +33,8 @@ export default function UserNav() {
     { label: "Contracts", href: "/contracts" },
     { label: "Assets", href: "/assets" },
     { label: "Network", href: "/network" },
+    { label: "Loans", href: "/loans" },
+    ...(user?.canHelpdesk || user?.role === "admin" ? [{ label: "Helpdesk", href: "/helpdesk" }] : []),
   ];
 
   const isActive = (href: string) => pathname === href;

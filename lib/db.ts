@@ -78,6 +78,7 @@ function initSchema(db: Database.Database) {
     `ALTER TABLE schools ADD COLUMN msp_email TEXT;`,
     `ALTER TABLE schools ADD COLUMN msp_phone TEXT;`,
     `ALTER TABLE schools ADD COLUMN msp_contract_expiry TEXT;`,
+    `ALTER TABLE users ADD COLUMN can_helpdesk INTEGER NOT NULL DEFAULT 0;`,
   ];
   for (const sql of migrations) {
     try { db.exec(sql); } catch { /* already exists */ }
@@ -98,6 +99,39 @@ function initSchema(db: Database.Database) {
       contact_email TEXT,
       contact_phone TEXT,
       auto_renew INTEGER DEFAULT 0,
+      notes TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS helpdesk_tickets (
+      id TEXT PRIMARY KEY,
+      school_id TEXT NOT NULL REFERENCES schools(id),
+      created_by TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      category TEXT,
+      priority TEXT NOT NULL DEFAULT 'Normal',
+      status TEXT NOT NULL DEFAULT 'Open',
+      assigned_to TEXT,
+      resolution TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS equipment_loans (
+      id TEXT PRIMARY KEY,
+      school_id TEXT NOT NULL REFERENCES schools(id),
+      borrower_name TEXT NOT NULL,
+      borrower_type TEXT NOT NULL DEFAULT 'Student',
+      borrower_group TEXT,
+      equipment TEXT NOT NULL,
+      asset_tag TEXT,
+      date_out TEXT NOT NULL,
+      date_due TEXT,
+      date_returned TEXT,
+      condition_out TEXT,
+      condition_in TEXT,
+      authorised_by TEXT,
       notes TEXT,
       created_at TEXT NOT NULL
     );

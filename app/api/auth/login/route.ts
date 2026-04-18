@@ -16,18 +16,19 @@ export async function POST(req: NextRequest) {
     FROM users u
     LEFT JOIN schools s ON s.id = u.school_id
     WHERE u.username = ?
-  `).get(username.trim().toLowerCase()) as (Record<string, string> | undefined);
+  `).get(username.trim().toLowerCase()) as (Record<string, string | number> | undefined);
 
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+  if (!user || !bcrypt.compareSync(password, user.password_hash as string)) {
     return NextResponse.json({ error: "Invalid username or password" }, { status: 401 });
   }
 
   const session = await getSession();
-  session.userId = user.id;
-  session.username = user.username;
+  session.userId = user.id as string;
+  session.username = user.username as string;
   session.role = user.role as "admin" | "user";
-  session.schoolId = user.school_id ?? null;
-  session.schoolName = user.school_name ?? null;
+  session.schoolId = (user.school_id as string) ?? null;
+  session.schoolName = (user.school_name as string) ?? null;
+  session.canHelpdesk = !!(user.can_helpdesk);
   await session.save();
 
   return NextResponse.json({ ok: true, role: user.role });
