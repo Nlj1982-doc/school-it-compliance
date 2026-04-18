@@ -29,7 +29,13 @@ interface User {
   role: string;
   school_id: string | null;
   school_name: string | null;
-  can_helpdesk: number;
+  can_helpdesk:   number;
+  can_compliance: number;
+  can_contracts:  number;
+  can_assets:     number;
+  can_network:    number;
+  can_loans:      number;
+  can_directory:  number;
   created_at: string;
 }
 
@@ -52,6 +58,7 @@ export default function AdminPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [resetState, setResetState] = useState<ResetPasswordState | null>(null);
+  const [expandedUser, setExpandedUser] = useState<string | null>(null);
 
   // New school form
   const [newSchoolName, setNewSchoolName] = useState("");
@@ -163,11 +170,12 @@ export default function AdminPage() {
     }
   }
 
-  async function handleToggleHelpdesk(u: User) {
+  async function handleTogglePerm(u: User, col: keyof User) {
+    const current = u[col] as number;
     await fetch("/api/admin/users", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: u.id, can_helpdesk: u.can_helpdesk ? 0 : 1 }),
+      body: JSON.stringify({ id: u.id, [col]: current ? 0 : 1 }),
     });
     loadAll();
   }
@@ -431,48 +439,84 @@ export default function AdminPage() {
                       <th className="px-5 py-3 font-medium">Username</th>
                       <th className="px-5 py-3 font-medium">Role</th>
                       <th className="px-5 py-3 font-medium">School</th>
-                      <th className="px-5 py-3 font-medium text-center">Helpdesk</th>
                       <th className="px-5 py-3 font-medium">Created</th>
                       <th className="px-5 py-3 font-medium"></th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y">
-                    {users.map((u) => (
-                      <tr key={u.id} className="hover:bg-gray-50">
-                        <td className="px-5 py-3 font-medium text-gray-800">{u.username}</td>
-                        <td className="px-5 py-3">
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${u.role === "admin" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"}`}>
-                            {u.role}
-                          </span>
-                        </td>
-                        <td className="px-5 py-3 text-gray-500">{u.school_name ?? <span className="text-gray-300">—</span>}</td>
-                        <td className="px-5 py-3 text-center">
-                          {u.role === "admin" ? (
-                            <span className="text-xs text-gray-300">always</span>
-                          ) : (
-                            <button
-                              onClick={() => handleToggleHelpdesk(u)}
-                              title={u.can_helpdesk ? "Click to revoke helpdesk access" : "Click to grant helpdesk access"}
-                              className={`text-xs px-2 py-0.5 rounded-full font-medium transition-colors ${u.can_helpdesk ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-gray-100 text-gray-400 hover:bg-gray-200"}`}
-                            >
-                              {u.can_helpdesk ? "Enabled" : "Disabled"}
-                            </button>
+                  <tbody>
+                    {users.map((u) => {
+                      const isExpanded = expandedUser === u.id;
+                      const tabPerms: Array<{ label: string; col: keyof User; defaultOn: boolean }> = [
+                        { label: "Compliance",  col: "can_compliance", defaultOn: true },
+                        { label: "Contracts",   col: "can_contracts",  defaultOn: true },
+                        { label: "Assets",      col: "can_assets",     defaultOn: true },
+                        { label: "Network",     col: "can_network",    defaultOn: true },
+                        { label: "Loans",       col: "can_loans",      defaultOn: true },
+                        { label: "Directory",   col: "can_directory",  defaultOn: true },
+                        { label: "Helpdesk Mgr", col: "can_helpdesk", defaultOn: false },
+                      ];
+                      return (
+                        <>
+                          <tr key={u.id} className={`border-t hover:bg-gray-50 ${isExpanded ? "bg-blue-50" : ""}`}>
+                            <td className="px-5 py-3 font-medium text-gray-800">{u.username}</td>
+                            <td className="px-5 py-3">
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${u.role === "admin" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"}`}>
+                                {u.role}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3 text-gray-500">{u.school_name ?? <span className="text-gray-300">—</span>}</td>
+                            <td className="px-5 py-3 text-gray-400 text-xs">{new Date(u.created_at).toLocaleDateString("en-GB")}</td>
+                            <td className="px-5 py-3 whitespace-nowrap">
+                              {u.role !== "admin" && (
+                                <button
+                                  onClick={() => setExpandedUser(isExpanded ? null : u.id)}
+                                  className={`text-xs px-2 py-1 rounded-lg font-medium mr-2 transition-colors ${isExpanded ? "bg-blue-700 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+                                >
+                                  Permissions
+                                </button>
+                              )}
+                              <button
+                                onClick={() => setResetState({ userId: u.id, username: u.username, newPassword: "", saving: false, error: "", success: false })}
+                                className="text-blue-500 hover:text-blue-700 text-sm mr-3 font-medium"
+                              >
+                                Reset Password
+                              </button>
+                              {u.username !== "admin" && (
+                                <button onClick={() => handleDeleteUser(u.id, u.username)} className="text-red-400 hover:text-red-600 text-sm">Delete</button>
+                              )}
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr key={`${u.id}-perms`} className="border-t bg-blue-50">
+                              <td colSpan={5} className="px-5 py-3">
+                                <div className="flex flex-wrap gap-2 items-center">
+                                  <span className="text-xs font-medium text-gray-500 mr-1">Tab access:</span>
+                                  {tabPerms.map(({ label, col, defaultOn }) => {
+                                    const enabled = !!(u[col] as number);
+                                    return (
+                                      <button
+                                        key={col}
+                                        onClick={() => handleTogglePerm(u, col)}
+                                        title={enabled ? `Click to disable ${label}` : `Click to enable ${label}`}
+                                        className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors border ${
+                                          enabled
+                                            ? defaultOn
+                                              ? "bg-green-100 text-green-700 border-green-200 hover:bg-green-200"
+                                              : "bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-200"
+                                            : "bg-white text-gray-400 border-gray-200 hover:bg-gray-50"
+                                        }`}
+                                      >
+                                        {enabled ? "✓ " : "✗ "}{label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </td>
+                            </tr>
                           )}
-                        </td>
-                        <td className="px-5 py-3 text-gray-400 text-xs">{new Date(u.created_at).toLocaleDateString("en-GB")}</td>
-                        <td className="px-5 py-3 whitespace-nowrap">
-                          <button
-                            onClick={() => setResetState({ userId: u.id, username: u.username, newPassword: "", saving: false, error: "", success: false })}
-                            className="text-blue-500 hover:text-blue-700 text-sm mr-3 font-medium"
-                          >
-                            Reset Password
-                          </button>
-                          {u.username !== "admin" && (
-                            <button onClick={() => handleDeleteUser(u.id, u.username)} className="text-red-400 hover:text-red-600 text-sm">Delete</button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                        </>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}

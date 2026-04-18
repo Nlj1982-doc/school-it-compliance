@@ -9,6 +9,12 @@ interface SessionUser {
   role: string;
   schoolName: string | null;
   canHelpdesk?: boolean;
+  canCompliance?: boolean;
+  canContracts?: boolean;
+  canAssets?: boolean;
+  canNetwork?: boolean;
+  canLoans?: boolean;
+  canDirectory?: boolean;
 }
 
 export default function UserNav() {
@@ -27,16 +33,18 @@ export default function UserNav() {
     window.location.href = "/login";
   }
 
+  const isAdmin = user?.role === "admin";
+
   const tabs = [
-    { label: "Dashboard", href: "/" },
-    { label: "Compliance", href: "/compliance" },
-    { label: "Contracts", href: "/contracts" },
-    { label: "Assets", href: "/assets" },
-    { label: "Network", href: "/network" },
-    { label: "Loans", href: "/loans" },
-    { label: "Helpdesk", href: "/helpdesk" },
-    { label: "Directory", href: "/directory" },
-  ];
+    { label: "Dashboard",   href: "/",           show: true },
+    { label: "Compliance",  href: "/compliance",  show: isAdmin || (user?.canCompliance  ?? true) },
+    { label: "Contracts",   href: "/contracts",   show: isAdmin || (user?.canContracts   ?? true) },
+    { label: "Assets",      href: "/assets",      show: isAdmin || (user?.canAssets      ?? true) },
+    { label: "Network",     href: "/network",     show: isAdmin || (user?.canNetwork     ?? true) },
+    { label: "Loans",       href: "/loans",       show: isAdmin || (user?.canLoans       ?? true) },
+    { label: "Helpdesk",    href: "/helpdesk",    show: true },
+    { label: "Directory",   href: "/directory",   show: isAdmin || (user?.canDirectory   ?? true) },
+  ].filter(t => t.show);
 
   const isActive = (href: string) => pathname === href;
 

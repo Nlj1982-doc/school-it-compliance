@@ -29,6 +29,12 @@ export async function POST(req: NextRequest) {
   session.schoolId = (user.school_id as string) ?? null;
   session.schoolName = (user.school_name as string) ?? null;
   session.canHelpdesk = !!(user.can_helpdesk);
+  session.canCompliance = user.can_compliance !== 0;
+  session.canContracts  = user.can_contracts  !== 0;
+  session.canAssets     = user.can_assets     !== 0;
+  session.canNetwork    = user.can_network    !== 0;
+  session.canLoans      = user.can_loans      !== 0;
+  session.canDirectory  = user.can_directory  !== 0;
   await session.save();
 
   return NextResponse.json({ ok: true, role: user.role });

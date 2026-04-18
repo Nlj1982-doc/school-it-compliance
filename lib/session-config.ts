@@ -7,6 +7,12 @@ export interface SessionData {
   schoolId: string | null;
   schoolName: string | null;
   canHelpdesk?: boolean;
+  canCompliance?: boolean;
+  canContracts?: boolean;
+  canAssets?: boolean;
+  canNetwork?: boolean;
+  canLoans?: boolean;
+  canDirectory?: boolean;
 }
 
 export const SESSION_OPTIONS: SessionOptions = {

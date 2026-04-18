@@ -12,7 +12,13 @@ export async function GET() {
       username: session.username,
       role: session.role,
       schoolName: session.schoolName,
-      canHelpdesk: session.canHelpdesk ?? false,
+      canHelpdesk:   session.canHelpdesk   ?? false,
+      canCompliance: session.canCompliance  ?? true,
+      canContracts:  session.canContracts   ?? true,
+      canAssets:     session.canAssets      ?? true,
+      canNetwork:    session.canNetwork     ?? true,
+      canLoans:      session.canLoans       ?? true,
+      canDirectory:  session.canDirectory   ?? true,
     },
   });
 }

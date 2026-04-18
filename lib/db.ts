@@ -80,6 +80,12 @@ function initSchema(db: Database.Database) {
     `ALTER TABLE schools ADD COLUMN msp_contract_expiry TEXT;`,
     `ALTER TABLE users ADD COLUMN can_helpdesk INTEGER NOT NULL DEFAULT 0;`,
     `ALTER TABLE equipment_loans ADD COLUMN pool_item_id TEXT REFERENCES loan_pool(id);`,
+    `ALTER TABLE users ADD COLUMN can_compliance INTEGER NOT NULL DEFAULT 1;`,
+    `ALTER TABLE users ADD COLUMN can_contracts INTEGER NOT NULL DEFAULT 1;`,
+    `ALTER TABLE users ADD COLUMN can_assets INTEGER NOT NULL DEFAULT 1;`,
+    `ALTER TABLE users ADD COLUMN can_network INTEGER NOT NULL DEFAULT 1;`,
+    `ALTER TABLE users ADD COLUMN can_loans INTEGER NOT NULL DEFAULT 1;`,
+    `ALTER TABLE users ADD COLUMN can_directory INTEGER NOT NULL DEFAULT 1;`,
   ];
   for (const sql of migrations) {
     try { db.exec(sql); } catch { /* already exists */ }
