@@ -10,12 +10,16 @@ interface Assessment { id: string; updated_at: string; answers: string; }
 interface Asset { warranty_end_date: string | null; status: string; }
 interface NetworkDevice { warranty_end_date: string | null; support_expiry: string | null; status: string; }
 interface Contract { end_date: string | null; name: string; }
+interface Ticket { status: string; }
+interface Loan { date_returned: string | null; date_due: string | null; }
 interface SessionUser {
   role: string;
+  canHelpdesk?: boolean;
   canCompliance?: boolean;
   canContracts?: boolean;
   canAssets?: boolean;
   canNetwork?: boolean;
+  canLoans?: boolean;
 }
 
 function daysUntil(d: string | null) {
@@ -44,6 +48,8 @@ export default function DashboardPage() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [network, setNetwork] = useState<NetworkDevice[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [loans, setLoans] = useState<Loan[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -53,21 +59,27 @@ export default function DashboardPage() {
       fetch("/api/my/assets").then(r => r.json()),
       fetch("/api/my/network").then(r => r.json()),
       fetch("/api/my/contracts").then(r => r.json()),
-    ]).then(([meData, assess, ast, net, con]) => {
+      fetch("/api/my/helpdesk").then(r => r.json()),
+      fetch("/api/my/loans").then(r => r.json()),
+    ]).then(([meData, assess, ast, net, con, tix, lns]) => {
       setMe(meData.user ?? null);
       setAssessment(Array.isArray(assess) ? (assess[0] ?? null) : null);
       setAssets(Array.isArray(ast) ? ast : []);
       setNetwork(Array.isArray(net) ? net : []);
       setContracts(Array.isArray(con) ? con : []);
+      setTickets(Array.isArray(tix) ? tix : []);
+      setLoans(Array.isArray(lns) ? lns : []);
       setLoading(false);
     });
   }, []);
 
   const isAdmin = me?.role === "admin";
+  const isHelpdeskMgr = isAdmin || !!me?.canHelpdesk;
   const canCompliance = isAdmin || (me?.canCompliance ?? true);
   const canContracts  = isAdmin || (me?.canContracts  ?? true);
   const canAssets     = isAdmin || (me?.canAssets     ?? true);
   const canNetwork    = isAdmin || (me?.canNetwork    ?? true);
+  const canLoans      = isAdmin || (me?.canLoans      ?? true);
 
   // Computed stats
   const answers = assessment ? JSON.parse(assessment.answers) as Record<string, QuestionStatus> : {};
@@ -82,12 +94,17 @@ export default function DashboardPage() {
   const contractsExpiring     = contracts.filter(c => { const d = daysUntil(c.end_date);        return d !== null && d >= 0 && d <= 30; });
   const contractsExpired      = contracts.filter(c => { const d = daysUntil(c.end_date);        return d !== null && d < 0; });
 
+  const openTickets     = tickets.filter(t => t.status !== "Closed" && t.status !== "Resolved");
+  const activeLoans     = loans.filter(l => !l.date_returned);
+  const overdueLoans    = activeLoans.filter(l => { const d = daysUntil(l.date_due); return d !== null && d < 0; });
+
   // Only count alerts for sections the user can see (computed after me is set,
   // but safe to use during the loading render — they'll all be 0 then anyway)
   const totalAlerts =
     (canAssets    ? assetWarrantyExpiring.length : 0) +
     (canNetwork   ? netWarrantyExpiring.length + netSupportExpiring.length : 0) +
-    (canContracts ? contractsExpiring.length + contractsExpired.length : 0);
+    (canContracts ? contractsExpiring.length + contractsExpired.length : 0) +
+    (canLoans     ? overdueLoans.length : 0);
 
   if (loading) {
     return (
@@ -224,6 +241,71 @@ export default function DashboardPage() {
               </div>
             )}
 
+            {/* Loans — always shown if canLoans */}
+            {canLoans && (
+              <div className="bg-white rounded-xl border shadow-sm p-5 flex flex-col">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-2xl">🎒</span>
+                  <span className="font-semibold text-gray-800">Loans</span>
+                </div>
+                <div className="space-y-1 mb-3 flex-1">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Active loans</span>
+                    <span className="font-semibold text-gray-800">{activeLoans.length}</span>
+                  </div>
+                  {overdueLoans.length > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Overdue</span>
+                      <span className="font-semibold text-red-600">{overdueLoans.length}</span>
+                    </div>
+                  )}
+                  {activeLoans.length === 0 && (
+                    <p className="text-xs text-gray-400">No equipment currently on loan.</p>
+                  )}
+                </div>
+                <button onClick={() => router.push("/loans")}
+                  className="mt-auto w-full text-center border border-blue-600 text-blue-700 hover:bg-blue-50 text-sm font-medium py-1.5 rounded-lg transition-colors">
+                  View Loans
+                </button>
+              </div>
+            )}
+
+            {/* Helpdesk — always visible */}
+            <div className="bg-white rounded-xl border shadow-sm p-5 flex flex-col">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-2xl">🎧</span>
+                <span className="font-semibold text-gray-800">Helpdesk</span>
+              </div>
+              <div className="space-y-1 mb-3 flex-1">
+                {isHelpdeskMgr ? (
+                  <>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Open tickets</span>
+                      <span className="font-semibold text-gray-800">{openTickets.length}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Total</span>
+                      <span className="font-semibold text-gray-500">{tickets.length}</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">My open tickets</span>
+                      <span className="font-semibold text-gray-800">{openTickets.length}</span>
+                    </div>
+                    {openTickets.length === 0 && (
+                      <p className="text-xs text-gray-400">No open tickets.</p>
+                    )}
+                  </>
+                )}
+              </div>
+              <button onClick={() => router.push("/helpdesk")}
+                className="mt-auto w-full text-center border border-blue-600 text-blue-700 hover:bg-blue-50 text-sm font-medium py-1.5 rounded-lg transition-colors">
+                {isHelpdeskMgr ? "Manage Helpdesk" : "My Tickets"}
+              </button>
+            </div>
+
           </div>
         </div>
 
@@ -279,6 +361,15 @@ export default function DashboardPage() {
                   <button onClick={() => router.push("/network")} className="text-xs text-blue-600 hover:underline">Review →</button>
                 </div>
               )}
+              {canLoans && overdueLoans.length > 0 && (
+                <div className="flex items-center justify-between py-2 px-3 bg-red-50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-red-700 bg-red-100 px-2 py-0.5 rounded-full">Loans</span>
+                    <span className="text-sm text-gray-700">{overdueLoans.length} loan{overdueLoans.length !== 1 ? "s" : ""} overdue</span>
+                  </div>
+                  <button onClick={() => router.push("/loans")} className="text-xs text-blue-600 hover:underline">Review →</button>
+                </div>
+              )}
             </div>
           </div>
         ) : (
@@ -299,6 +390,8 @@ export default function DashboardPage() {
               { label: "Add Asset", icon: "💻", href: "/assets", show: canAssets },
               { label: "Add Network Device", icon: "🌐", href: "/network", show: canNetwork },
               { label: "Add Contract", icon: "📄", href: "/contracts", show: canContracts },
+              { label: "Loan Equipment", icon: "🎒", href: "/loans", show: canLoans },
+              { label: "Submit Ticket", icon: "🎧", href: "/helpdesk", show: true },
             ].filter(l => l.show).map(l => (
               <button key={l.href} onClick={() => router.push(l.href)}
                 className="bg-white border rounded-xl p-4 text-left hover:bg-gray-50 transition-colors shadow-sm">
