@@ -10,6 +10,13 @@ interface Assessment { id: string; updated_at: string; answers: string; }
 interface Asset { warranty_end_date: string | null; status: string; }
 interface NetworkDevice { warranty_end_date: string | null; support_expiry: string | null; status: string; }
 interface Contract { end_date: string | null; name: string; }
+interface SessionUser {
+  role: string;
+  canCompliance?: boolean;
+  canContracts?: boolean;
+  canAssets?: boolean;
+  canNetwork?: boolean;
+}
 
 function daysUntil(d: string | null) {
   if (!d) return null;
@@ -32,6 +39,7 @@ function RagBadge({ rag }: { rag: string | null }) {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const [me, setMe] = useState<SessionUser | null>(null);
   const [assessment, setAssessment] = useState<Assessment | null>(null);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [network, setNetwork] = useState<NetworkDevice[]>([]);
@@ -40,11 +48,13 @@ export default function DashboardPage() {
 
   useEffect(() => {
     Promise.all([
+      fetch("/api/auth/me").then(r => r.json()),
       fetch("/api/assessments").then(r => r.json()),
       fetch("/api/my/assets").then(r => r.json()),
       fetch("/api/my/network").then(r => r.json()),
       fetch("/api/my/contracts").then(r => r.json()),
-    ]).then(([assess, ast, net, con]) => {
+    ]).then(([meData, assess, ast, net, con]) => {
+      setMe(meData.user ?? null);
       setAssessment(Array.isArray(assess) ? (assess[0] ?? null) : null);
       setAssets(Array.isArray(ast) ? ast : []);
       setNetwork(Array.isArray(net) ? net : []);
@@ -52,6 +62,12 @@ export default function DashboardPage() {
       setLoading(false);
     });
   }, []);
+
+  const isAdmin = me?.role === "admin";
+  const canCompliance = isAdmin || (me?.canCompliance ?? true);
+  const canContracts  = isAdmin || (me?.canContracts  ?? true);
+  const canAssets     = isAdmin || (me?.canAssets     ?? true);
+  const canNetwork    = isAdmin || (me?.canNetwork    ?? true);
 
   // Computed stats
   const answers = assessment ? JSON.parse(assessment.answers) as Record<string, QuestionStatus> : {};
@@ -66,7 +82,12 @@ export default function DashboardPage() {
   const contractsExpiring     = contracts.filter(c => { const d = daysUntil(c.end_date);        return d !== null && d >= 0 && d <= 30; });
   const contractsExpired      = contracts.filter(c => { const d = daysUntil(c.end_date);        return d !== null && d < 0; });
 
-  const totalAlerts = assetWarrantyExpiring.length + netWarrantyExpiring.length + netSupportExpiring.length + contractsExpiring.length + contractsExpired.length;
+  // Only count alerts for sections the user can see (computed after me is set,
+  // but safe to use during the loading render — they'll all be 0 then anyway)
+  const totalAlerts =
+    (canAssets    ? assetWarrantyExpiring.length : 0) +
+    (canNetwork   ? netWarrantyExpiring.length + netSupportExpiring.length : 0) +
+    (canContracts ? contractsExpiring.length + contractsExpired.length : 0);
 
   if (loading) {
     return (
@@ -89,111 +110,119 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 
             {/* Compliance */}
-            <div className="bg-white rounded-xl border shadow-sm p-5 flex flex-col">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-2xl">📋</span>
-                <span className="font-semibold text-gray-800">Compliance</span>
+            {canCompliance && (
+              <div className="bg-white rounded-xl border shadow-sm p-5 flex flex-col">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-2xl">📋</span>
+                  <span className="font-semibold text-gray-800">Compliance</span>
+                </div>
+                {assessment ? (
+                  <>
+                    <div className="mb-1"><RagBadge rag={rag} /></div>
+                    <div className="text-xs text-gray-500 mb-1">{compliancePct}% complete · {answeredCount}/{totalQ} questions</div>
+                    <div className="text-xs text-gray-400 mb-3">Updated {new Date(assessment.updated_at).toLocaleDateString("en-GB")}</div>
+                  </>
+                ) : (
+                  <p className="text-xs text-gray-400 mb-3 flex-1">No assessment started yet.</p>
+                )}
+                <button onClick={() => router.push("/compliance")}
+                  className="mt-auto w-full text-center bg-blue-700 hover:bg-blue-800 text-white text-sm font-medium py-1.5 rounded-lg transition-colors">
+                  {assessment && answeredCount > 0 ? "View Compliance" : "Start Assessment"}
+                </button>
               </div>
-              {assessment ? (
-                <>
-                  <div className="mb-1"><RagBadge rag={rag} /></div>
-                  <div className="text-xs text-gray-500 mb-1">{compliancePct}% complete · {answeredCount}/{totalQ} questions</div>
-                  <div className="text-xs text-gray-400 mb-3">Updated {new Date(assessment.updated_at).toLocaleDateString("en-GB")}</div>
-                </>
-              ) : (
-                <p className="text-xs text-gray-400 mb-3 flex-1">No assessment started yet.</p>
-              )}
-              <button onClick={() => router.push("/compliance")}
-                className="mt-auto w-full text-center bg-blue-700 hover:bg-blue-800 text-white text-sm font-medium py-1.5 rounded-lg transition-colors">
-                {assessment && answeredCount > 0 ? "View Compliance" : "Start Assessment"}
-              </button>
-            </div>
+            )}
 
             {/* Assets */}
-            <div className="bg-white rounded-xl border shadow-sm p-5 flex flex-col">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-2xl">💻</span>
-                <span className="font-semibold text-gray-800">Asset Log</span>
-              </div>
-              <div className="space-y-1 mb-3 flex-1">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Total devices</span>
-                  <span className="font-semibold text-gray-800">{assets.length}</span>
+            {canAssets && (
+              <div className="bg-white rounded-xl border shadow-sm p-5 flex flex-col">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-2xl">💻</span>
+                  <span className="font-semibold text-gray-800">Asset Log</span>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Active</span>
-                  <span className="font-semibold text-green-700">{assets.filter(a => a.status === "Active").length}</span>
-                </div>
-                {assetWarrantyExpiring.length > 0 && (
+                <div className="space-y-1 mb-3 flex-1">
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Warranty expiring</span>
-                    <span className="font-semibold text-red-600">{assetWarrantyExpiring.length}</span>
+                    <span className="text-gray-500">Total devices</span>
+                    <span className="font-semibold text-gray-800">{assets.length}</span>
                   </div>
-                )}
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Active</span>
+                    <span className="font-semibold text-green-700">{assets.filter(a => a.status === "Active").length}</span>
+                  </div>
+                  {assetWarrantyExpiring.length > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Warranty expiring</span>
+                      <span className="font-semibold text-red-600">{assetWarrantyExpiring.length}</span>
+                    </div>
+                  )}
+                </div>
+                <button onClick={() => router.push("/assets")}
+                  className="mt-auto w-full text-center border border-blue-600 text-blue-700 hover:bg-blue-50 text-sm font-medium py-1.5 rounded-lg transition-colors">
+                  View Assets
+                </button>
               </div>
-              <button onClick={() => router.push("/assets")}
-                className="mt-auto w-full text-center border border-blue-600 text-blue-700 hover:bg-blue-50 text-sm font-medium py-1.5 rounded-lg transition-colors">
-                View Assets
-              </button>
-            </div>
+            )}
 
             {/* Network */}
-            <div className="bg-white rounded-xl border shadow-sm p-5 flex flex-col">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-2xl">🌐</span>
-                <span className="font-semibold text-gray-800">Network</span>
-              </div>
-              <div className="space-y-1 mb-3 flex-1">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Total devices</span>
-                  <span className="font-semibold text-gray-800">{network.length}</span>
+            {canNetwork && (
+              <div className="bg-white rounded-xl border shadow-sm p-5 flex flex-col">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-2xl">🌐</span>
+                  <span className="font-semibold text-gray-800">Network</span>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Active</span>
-                  <span className="font-semibold text-green-700">{network.filter(n => n.status === "Active").length}</span>
-                </div>
-                {(netWarrantyExpiring.length + netSupportExpiring.length) > 0 && (
+                <div className="space-y-1 mb-3 flex-1">
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Expiring soon</span>
-                    <span className="font-semibold text-red-600">{netWarrantyExpiring.length + netSupportExpiring.length}</span>
+                    <span className="text-gray-500">Total devices</span>
+                    <span className="font-semibold text-gray-800">{network.length}</span>
                   </div>
-                )}
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Active</span>
+                    <span className="font-semibold text-green-700">{network.filter(n => n.status === "Active").length}</span>
+                  </div>
+                  {(netWarrantyExpiring.length + netSupportExpiring.length) > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Expiring soon</span>
+                      <span className="font-semibold text-red-600">{netWarrantyExpiring.length + netSupportExpiring.length}</span>
+                    </div>
+                  )}
+                </div>
+                <button onClick={() => router.push("/network")}
+                  className="mt-auto w-full text-center border border-blue-600 text-blue-700 hover:bg-blue-50 text-sm font-medium py-1.5 rounded-lg transition-colors">
+                  View Network
+                </button>
               </div>
-              <button onClick={() => router.push("/network")}
-                className="mt-auto w-full text-center border border-blue-600 text-blue-700 hover:bg-blue-50 text-sm font-medium py-1.5 rounded-lg transition-colors">
-                View Network
-              </button>
-            </div>
+            )}
 
             {/* Contracts */}
-            <div className="bg-white rounded-xl border shadow-sm p-5 flex flex-col">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-2xl">📄</span>
-                <span className="font-semibold text-gray-800">Contracts</span>
-              </div>
-              <div className="space-y-1 mb-3 flex-1">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Total contracts</span>
-                  <span className="font-semibold text-gray-800">{contracts.length}</span>
+            {canContracts && (
+              <div className="bg-white rounded-xl border shadow-sm p-5 flex flex-col">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-2xl">📄</span>
+                  <span className="font-semibold text-gray-800">Contracts</span>
                 </div>
-                {contractsExpiring.length > 0 && (
+                <div className="space-y-1 mb-3 flex-1">
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Expiring soon</span>
-                    <span className="font-semibold text-red-600">{contractsExpiring.length}</span>
+                    <span className="text-gray-500">Total contracts</span>
+                    <span className="font-semibold text-gray-800">{contracts.length}</span>
                   </div>
-                )}
-                {contractsExpired.length > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Expired</span>
-                    <span className="font-semibold text-red-700">{contractsExpired.length}</span>
-                  </div>
-                )}
+                  {contractsExpiring.length > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Expiring soon</span>
+                      <span className="font-semibold text-red-600">{contractsExpiring.length}</span>
+                    </div>
+                  )}
+                  {contractsExpired.length > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Expired</span>
+                      <span className="font-semibold text-red-700">{contractsExpired.length}</span>
+                    </div>
+                  )}
+                </div>
+                <button onClick={() => router.push("/contracts")}
+                  className="mt-auto w-full text-center border border-blue-600 text-blue-700 hover:bg-blue-50 text-sm font-medium py-1.5 rounded-lg transition-colors">
+                  View Contracts
+                </button>
               </div>
-              <button onClick={() => router.push("/contracts")}
-                className="mt-auto w-full text-center border border-blue-600 text-blue-700 hover:bg-blue-50 text-sm font-medium py-1.5 rounded-lg transition-colors">
-                View Contracts
-              </button>
-            </div>
+            )}
 
           </div>
         </div>
@@ -209,7 +238,7 @@ export default function DashboardPage() {
               <span className="text-xs text-gray-400">(due within 30 days or already expired)</span>
             </div>
             <div className="space-y-2">
-              {contractsExpired.length > 0 && (
+              {canContracts && contractsExpired.length > 0 && (
                 <div className="flex items-center justify-between py-2 px-3 bg-red-50 rounded-lg">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-medium text-red-700 bg-red-100 px-2 py-0.5 rounded-full">Contracts</span>
@@ -218,7 +247,7 @@ export default function DashboardPage() {
                   <button onClick={() => router.push("/contracts")} className="text-xs text-blue-600 hover:underline">Review →</button>
                 </div>
               )}
-              {contractsExpiring.length > 0 && (
+              {canContracts && contractsExpiring.length > 0 && (
                 <div className="flex items-center justify-between py-2 px-3 bg-yellow-50 rounded-lg">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-medium text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full">Contracts</span>
@@ -230,7 +259,7 @@ export default function DashboardPage() {
                   <button onClick={() => router.push("/contracts")} className="text-xs text-blue-600 hover:underline">Review →</button>
                 </div>
               )}
-              {assetWarrantyExpiring.length > 0 && (
+              {canAssets && assetWarrantyExpiring.length > 0 && (
                 <div className="flex items-center justify-between py-2 px-3 bg-yellow-50 rounded-lg">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-medium text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full">Assets</span>
@@ -239,7 +268,7 @@ export default function DashboardPage() {
                   <button onClick={() => router.push("/assets")} className="text-xs text-blue-600 hover:underline">Review →</button>
                 </div>
               )}
-              {(netWarrantyExpiring.length + netSupportExpiring.length) > 0 && (
+              {canNetwork && (netWarrantyExpiring.length + netSupportExpiring.length) > 0 && (
                 <div className="flex items-center justify-between py-2 px-3 bg-yellow-50 rounded-lg">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-medium text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full">Network</span>
@@ -266,11 +295,11 @@ export default function DashboardPage() {
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Quick Links</h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
-              { label: "Run Compliance Assessment", icon: "📋", href: assessment ? `/assess/${assessment.id}` : "/compliance" },
-              { label: "Add Asset", icon: "💻", href: "/assets" },
-              { label: "Add Network Device", icon: "🌐", href: "/network" },
-              { label: "Add Contract", icon: "📄", href: "/contracts" },
-            ].map(l => (
+              { label: "Run Compliance Assessment", icon: "📋", href: assessment ? `/assess/${assessment.id}` : "/compliance", show: canCompliance },
+              { label: "Add Asset", icon: "💻", href: "/assets", show: canAssets },
+              { label: "Add Network Device", icon: "🌐", href: "/network", show: canNetwork },
+              { label: "Add Contract", icon: "📄", href: "/contracts", show: canContracts },
+            ].filter(l => l.show).map(l => (
               <button key={l.href} onClick={() => router.push(l.href)}
                 className="bg-white border rounded-xl p-4 text-left hover:bg-gray-50 transition-colors shadow-sm">
                 <div className="text-2xl mb-1">{l.icon}</div>
