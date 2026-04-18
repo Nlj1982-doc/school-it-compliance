@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { getDb } from "@/lib/db";
 import { getSession } from "@/lib/session";
 import { syncMicrosoft, syncGoogle, roleSummary, type MicrosoftConfig, type GoogleConfig } from "@/lib/directory-sync";
+import { decryptConfig } from "@/lib/config-crypto";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -19,7 +20,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
   let users;
   try {
-    const config = JSON.parse(conn.config);
+    const config = decryptConfig(conn.config);
     if (provider === "microsoft") users = await syncMicrosoft(config as MicrosoftConfig);
     else if (provider === "google") users = await syncGoogle(config as GoogleConfig);
     else return NextResponse.json({ error: "Unknown provider" }, { status: 400 });

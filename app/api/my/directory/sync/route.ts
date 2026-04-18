@@ -9,6 +9,7 @@ import {
   type MicrosoftConfig,
   type GoogleConfig,
 } from "@/lib/directory-sync";
+import { decryptConfig } from "@/lib/config-crypto";
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -28,7 +29,7 @@ export async function POST(req: NextRequest) {
 
   let users;
   try {
-    const config = JSON.parse(conn.config);
+    const config = decryptConfig(conn.config);
     if (provider === "microsoft") {
       users = await syncMicrosoft(config as MicrosoftConfig);
     } else if (provider === "google") {

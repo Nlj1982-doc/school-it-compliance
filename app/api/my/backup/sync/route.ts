@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { getDb } from "@/lib/db";
 import { getSession } from "@/lib/session";
 import { syncBackupProvider, type BackupProvider } from "@/lib/backup-sync";
+import { decryptConfig } from "@/lib/config-crypto";
 
 async function requireSchool() {
   const session = await getSession();
@@ -58,7 +59,7 @@ export async function POST(req: NextRequest) {
 
   let jobs;
   try {
-    const config = JSON.parse(conn.config) as unknown;
+    const config = decryptConfig(conn.config);
     jobs = await syncBackupProvider(conn.provider as BackupProvider, config);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Sync failed";

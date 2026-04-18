@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 import bcrypt from "bcryptjs";
+import { encryptConfig, isEncrypted } from "./config-crypto";
 
 const DB_DIR = path.join(process.cwd(), "data");
 const DB_PATH = path.join(DB_DIR, "compliance.db");
@@ -17,6 +18,7 @@ export function getDb(): Database.Database {
   db.pragma("journal_mode = WAL");
   initSchema(db);
   seedAdmin(db);
+  migrateEncryptConfigs(db);
   return db;
 }
 
@@ -283,6 +285,39 @@ function initSchema(db: Database.Database) {
       polled_at TEXT NOT NULL
     );
   `);
+}
+
+/** One-time startup migration: encrypt any plain-text config columns. */
+function migrateEncryptConfigs(db: Database.Database) {
+  const TABLES = [
+    "backup_connections",
+    "netmgmt_connections",
+    "directory_connections",
+  ];
+  for (const table of TABLES) {
+    try {
+      const rows = db
+        .prepare(`SELECT id, config FROM ${table}`)
+        .all() as Array<{ id: string; config: string }>;
+      const update = db.prepare(
+        `UPDATE ${table} SET config = ? WHERE id = ?`
+      );
+      db.transaction(() => {
+        for (const row of rows) {
+          if (!isEncrypted(row.config)) {
+            try {
+              const encrypted = encryptConfig(JSON.parse(row.config));
+              update.run(encrypted, row.id);
+            } catch {
+              // Malformed existing row — skip silently
+            }
+          }
+        }
+      })();
+    } catch {
+      // Table doesn't exist yet — skip
+    }
+  }
 }
 
 function seedAdmin(db: Database.Database) {

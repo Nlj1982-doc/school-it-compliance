@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { getDb } from "@/lib/db";
 import { getSession } from "@/lib/session";
+import { encryptConfig } from "@/lib/config-crypto";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -30,10 +31,10 @@ export async function POST(req: NextRequest, { params }: Params) {
     .get(schoolId, provider);
   if (existing) {
     getDb().prepare("UPDATE directory_connections SET config = ?, last_error = NULL WHERE school_id = ? AND provider = ?")
-      .run(JSON.stringify(config), schoolId, provider);
+      .run(encryptConfig(config), schoolId, provider);
   } else {
     getDb().prepare("INSERT INTO directory_connections (id, school_id, provider, config, created_at) VALUES (?, ?, ?, ?, ?)")
-      .run(randomUUID(), schoolId, provider, JSON.stringify(config), new Date().toISOString());
+      .run(randomUUID(), schoolId, provider, encryptConfig(config), new Date().toISOString());
   }
   return NextResponse.json({ ok: true });
 }

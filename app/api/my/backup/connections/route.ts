@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { getDb } from "@/lib/db";
 import { getSession } from "@/lib/session";
+import { encryptConfig } from "@/lib/config-crypto";
 
 async function requireSchool() {
   const session = await getSession();
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest) {
     .prepare(
       "INSERT INTO backup_connections (id, school_id, provider, label, config, created_at) VALUES (?, ?, ?, ?, ?, ?)"
     )
-    .run(id, schoolId, provider, label, JSON.stringify(config), new Date().toISOString());
+    .run(id, schoolId, provider, label, encryptConfig(config), new Date().toISOString());
 
   return NextResponse.json({ ok: true, id });
 }

@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { getDb } from "@/lib/db";
 import { getSession } from "@/lib/session";
 import { syncNetMgmt, type NetMgmtProvider } from "@/lib/network-firmware-sync";
+import { decryptConfig } from "@/lib/config-crypto";
 
 async function requireSchool() {
   const session = await getSession();
@@ -58,7 +59,7 @@ export async function POST(req: NextRequest) {
 
   let networkDevices;
   try {
-    const config = JSON.parse(conn.config) as unknown;
+    const config = decryptConfig(conn.config);
     networkDevices = await syncNetMgmt(conn.provider as NetMgmtProvider, config);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Sync failed";
