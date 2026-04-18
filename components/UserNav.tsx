@@ -35,6 +35,7 @@ export default function UserNav() {
     { label: "Network", href: "/network" },
     { label: "Loans", href: "/loans" },
     { label: "Helpdesk", href: "/helpdesk" },
+    { label: "Directory", href: "/directory" },
   ];
 
   const isActive = (href: string) => pathname === href;

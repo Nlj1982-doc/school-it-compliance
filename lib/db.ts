@@ -157,6 +157,33 @@ function initSchema(db: Database.Database) {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS directory_connections (
+      id TEXT PRIMARY KEY,
+      school_id TEXT NOT NULL REFERENCES schools(id),
+      provider TEXT NOT NULL,
+      config TEXT NOT NULL,
+      user_count INTEGER NOT NULL DEFAULT 0,
+      last_synced TEXT,
+      last_error TEXT,
+      created_at TEXT NOT NULL,
+      UNIQUE(school_id, provider)
+    );
+
+    CREATE TABLE IF NOT EXISTS directory_users (
+      id TEXT PRIMARY KEY,
+      school_id TEXT NOT NULL REFERENCES schools(id),
+      provider TEXT NOT NULL,
+      external_id TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      email TEXT,
+      role TEXT NOT NULL DEFAULT 'staff',
+      department TEXT,
+      job_title TEXT,
+      ou_path TEXT,
+      synced_at TEXT NOT NULL,
+      UNIQUE(school_id, provider, external_id)
+    );
+
     CREATE TABLE IF NOT EXISTS loan_pool (
       id TEXT PRIMARY KEY,
       school_id TEXT NOT NULL REFERENCES schools(id),
