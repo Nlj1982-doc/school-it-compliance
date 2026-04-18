@@ -284,6 +284,18 @@ function initSchema(db: Database.Database) {
       status TEXT NOT NULL DEFAULT 'Unknown',
       polled_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS assessment_evidence (
+      id TEXT PRIMARY KEY,
+      assessment_id TEXT NOT NULL,
+      question_id TEXT NOT NULL,
+      notes TEXT,
+      auto_evidence TEXT,
+      reviewed_at TEXT,
+      review_due TEXT,
+      updated_at TEXT NOT NULL,
+      UNIQUE(assessment_id, question_id)
+    );
   `);
 }
 
